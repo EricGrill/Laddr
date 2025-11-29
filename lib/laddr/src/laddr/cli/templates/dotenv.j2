@@ -8,9 +8,10 @@
 # ===================================
 
 # Database Configuration
-DATABASE_URL=postgresql://laddr:laddr@postgres:5432/laddr
-# For SQLite (local development):
-# DATABASE_URL=sqlite:///./laddr.db
+# Default: local SQLite database (recommended for getting started)
+DATABASE_URL=sqlite:///./laddr.db
+# For Postgres (production or external DB):
+# DATABASE_URL=postgresql://laddr:laddr@postgres:5432/laddr
 
 # Message Broker
 REDIS_URL=redis://redis:6379
@@ -66,7 +67,7 @@ API_PORT=8000
 # ===================================
 # Choose which backends to use (defaults shown)
 # QUEUE_BACKEND=redis     # Options: redis, memory
-DB_BACKEND=postgres     # Options: postgres, sqlite
+DB_BACKEND=sqlite       # Options: sqlite, postgres
 # CACHE_BACKEND=inmemory  # Options: inmemory, redis
 
 # Worker Scaling (Docker Compose)
@@ -131,7 +132,16 @@ SERPER_API_KEY=
 # Dashboard Authentication
 # ===================================
 # Optional basic auth for dashboard (format: username:password)
-# EVENAGE_DASH_USERS=admin:admin
+# LADDR_DASH_USERS=admin:admin
+
+# ===================================
+# API Key Authentication
+# ===================================
+# API Key for protecting API routes (optional)
+# If set, all API routes require this key in X-API-Key header or Authorization: Bearer <key>
+# If not set, API routes are publicly accessible
+# Generate a secure key with: openssl rand -hex 32
+# LADDR_API_KEY=your-secret-api-key-here
 
 # ===================================
 # Execution Limits

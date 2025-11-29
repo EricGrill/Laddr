@@ -9,6 +9,8 @@ import Playground from './pages/Playground';
 import PlaygroundHistory from './pages/PlaygroundHistory';
 import PlaygroundDetail from './pages/PlaygroundDetail';
 import Traces from './pages/Traces';
+import Batches from './pages/Batches';
+import BatchDetail from './pages/BatchDetail';
 import Logs from './pages/Logs';
 import Settings from './pages/Settings';
 import './App.css';
@@ -34,6 +36,8 @@ function App() {
                 <Route path="/playground-history" element={<PlaygroundHistory />} />
                 <Route path="/playground-history/:promptId" element={<PlaygroundDetail />} />
                 <Route path="/traces" element={<Traces />} />
+                <Route path="/batches" element={<Batches />} />
+                <Route path="/batches/:batchId" element={<BatchDetail />} />
                 <Route path="/logs" element={<Logs />} />
                 <Route path="/settings" element={<Settings />} />
               </Routes>

@@ -314,3 +314,47 @@ export const usePlaygroundTraces = (playgroundId: string | null) => {
 
   return { traces, isConnected, isComplete, status, error, clearTraces };
 };
+
+export const useBatchTraces = (batchId: string | null) => {
+  const [traces, setTraces] = useState<any[]>([]);
+  const [isComplete, setIsComplete] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  // Clear traces when batchId changes
+  useEffect(() => {
+    setTraces([]);
+    setIsComplete(false);
+    setStatus(null);
+  }, [batchId]);
+
+  const { isConnected, error } = useWebSocket(
+    batchId ? `/ws/batches/${batchId}` : '',
+    {
+      onMessage: (message: any) => {
+        if (message.type === 'traces' && message.data) {
+          if (message.data.spans && Array.isArray(message.data.spans)) {
+            // Backend sends full tree on each update for batches
+            setTraces([{ spans: message.data.spans }]);
+          }
+        } else if (message.type === 'complete' && message.data) {
+          setIsComplete(true);
+          setStatus(message.data.status);
+          if (message.data.spans && Array.isArray(message.data.spans)) {
+            setTraces([{ spans: message.data.spans }]);
+          }
+        } else if (message.type === 'error') {
+          setIsComplete(true);
+          setStatus('error');
+        }
+      },
+    }
+  );
+
+  const clearTraces = useCallback(() => {
+    setTraces([]);
+    setIsComplete(false);
+    setStatus(null);
+  }, []);
+
+  return { traces, isConnected, isComplete, status, error, clearTraces };
+};

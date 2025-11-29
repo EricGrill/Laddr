@@ -17,6 +17,7 @@ import importlib
 import json
 import logging
 import time
+import uuid
 from typing import Any
 
 logging.basicConfig(level=logging.INFO)
@@ -36,7 +37,8 @@ from laddr.core import (
     LaddrConfig,
     run_agent,
 )
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from laddr.core.langfuse_tracer import get_langfuse_client
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -72,6 +74,20 @@ class AgentChatRequest(BaseModel):
     message: str
     wait: bool = True
     timeout: int = 30
+
+
+class BatchTasksRequest(BaseModel):
+    """Request to submit multiple tasks to an agent's queue."""
+    tasks: list[dict[str, Any]]  # List of task payloads
+    wait: bool = False  # Whether to wait for responses
+    batch_id: str | None = None  # Optional: use existing batch_id for trace grouping
+
+
+class AddTasksToBatchRequest(BaseModel):
+    """Request to add more tasks to an existing batch."""
+    agent_name: str  # Agent to run (e.g., "aggregator")
+    tasks: list[dict[str, Any]]  # Tasks to add (usually 1 task for aggregator)
+    wait: bool = False
 
 
 class AgentInfo(BaseModel):
@@ -208,6 +224,78 @@ app.add_middleware(
 )
 
 
+# API Key Authentication Dependency
+def verify_api_key(request: Request) -> None:
+    """
+    Verify API key from request headers.
+    If LADDR_API_KEY is not set, authentication is disabled (no-op).
+    If LADDR_API_KEY is set, validates the key from X-API-Key or Authorization header.
+    Raises HTTPException(401) if invalid or missing.
+    """
+    # If API key is not configured, skip authentication
+    if not config.laddr_api_key:
+        return
+    
+    # Extract API key from headers
+    api_key = request.headers.get("X-API-Key")
+    if not api_key:
+        # Fallback to Authorization: Bearer <key>
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            api_key = auth_header[7:].strip()
+    
+    # Validate API key
+    if not api_key or api_key != config.laddr_api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing API key"
+        )
+
+
+# Alias for cleaner usage in route decorators
+require_api_key = Depends(verify_api_key)
+
+
+def _merge_batch_inputs(existing_inputs: dict | None, new_tasks: list[dict[str, Any]]) -> dict:
+    """Merge new tasks into the stored batch inputs."""
+    merged: dict[str, Any] = {}
+    if isinstance(existing_inputs, dict):
+        merged = dict(existing_inputs)
+    existing_tasks = []
+    if isinstance(merged.get("tasks"), list):
+        existing_tasks = list(merged["tasks"])
+    existing_tasks.extend(new_tasks)
+    merged["tasks"] = existing_tasks
+    return merged
+
+
+async def verify_websocket_api_key(websocket: WebSocket) -> None:
+    """
+    Verify API key for WebSocket connections.
+    Checks query parameter 'api_key' or 'X-API-Key' header.
+    If LADDR_API_KEY is not set, authentication is disabled.
+    """
+    # If API key is not configured, skip authentication
+    if not config.laddr_api_key:
+        return
+    
+    # Extract API key from query parameter or headers
+    api_key = websocket.query_params.get("api_key")
+    if not api_key:
+        # Fallback to X-API-Key header
+        api_key = websocket.headers.get("X-API-Key")
+    if not api_key:
+        # Fallback to Authorization: Bearer <key>
+        auth_header = websocket.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            api_key = auth_header[7:].strip()
+    
+    # Validate API key
+    if not api_key or api_key != config.laddr_api_key:
+        await websocket.close(code=1008, reason="Invalid or missing API key")
+        raise ValueError("Invalid or missing API key")
+
+
 @app.get("/")
 async def root():
     """Root endpoint - API information."""
@@ -236,20 +324,45 @@ async def health():
     
     # Get queue backend
     queue_type = config.queue_backend.upper()
-    
+
+    # Tracing status
+    tracing_backend = "disabled"
+    tracing_enabled = False
+    try:
+        # First, detect Langfuse client if integration is enabled.
+        if getattr(config, "langfuse_enabled", True):
+            lf_client = get_langfuse_client()
+            if lf_client is not None:
+                tracing_backend = "langfuse"
+                tracing_enabled = True
+        # If Langfuse is not configured, fall back to DB-based tracing.
+        if not tracing_enabled and getattr(config, "enable_tracing", True) and getattr(
+            database, "tracing_backend_enabled", False
+        ):
+            tracing_backend = "database"
+            tracing_enabled = True
+    except Exception:
+        # Health endpoint must never fail because of tracing introspection
+        tracing_backend = "unknown"
+        tracing_enabled = False
+
     return {
         "status": "ok",
-        "version": "0.8.3",
+        "version": "0.8.6",
         "components": {
             "database": db_type,
             "storage": storage_type,
-            "message_bus": queue_type
-        }
+            "message_bus": queue_type,
+            "tracing": {
+                "enabled": tracing_enabled,
+                "backend": tracing_backend,
+            },
+        },
     }
 
 
 @app.post("/api/jobs")
-async def submit_job(request: SubmitJobRequest):
+async def submit_job(request: SubmitJobRequest, _: None = require_api_key):
     """
     Submit a new job for execution.
 
@@ -283,7 +396,7 @@ async def submit_job(request: SubmitJobRequest):
 
 
 @app.get("/api/jobs/{job_id}")
-async def get_job(job_id: str):
+async def get_job(job_id: str, _: None = require_api_key):
     """
     Get job status and result.
 
@@ -326,7 +439,7 @@ async def get_job(job_id: str):
 
 
 @app.get("/api/jobs")
-async def list_jobs(limit: int = 50, offset: int = 0):
+async def list_jobs(limit: int = 50, offset: int = 0, _: None = require_api_key):
     """
     List recent jobs.
 
@@ -362,7 +475,7 @@ async def list_jobs(limit: int = 50, offset: int = 0):
 
 
 @app.post("/api/jobs/{job_id}/replay")
-async def replay_job(job_id: str, request: ReplayJobRequest):
+async def replay_job(job_id: str, request: ReplayJobRequest, _: None = require_api_key):
     """
     Replay a previous job.
 
@@ -387,7 +500,7 @@ async def replay_job(job_id: str, request: ReplayJobRequest):
 # --- New Prompt Endpoints (preferred terminology) ---
 
 @app.post("/api/prompts")
-async def submit_prompt(request: SubmitPromptRequest):
+async def submit_prompt(request: SubmitPromptRequest, _: None = require_api_key):
     """
     Submit a new prompt execution (non-blocking).
 
@@ -465,7 +578,7 @@ async def submit_prompt(request: SubmitPromptRequest):
 
 
 @app.get("/api/prompts/{prompt_id}")
-async def get_prompt(prompt_id: str):
+async def get_prompt(prompt_id: str, _: None = require_api_key):
     """
     Get prompt execution status and result.
 
@@ -508,7 +621,7 @@ async def get_prompt(prompt_id: str):
 
 
 @app.get("/api/prompts")
-async def list_prompts(limit: int = 50):
+async def list_prompts(limit: int = 50, _: None = require_api_key):
     """
     List recent prompt executions.
 
@@ -543,7 +656,7 @@ async def list_prompts(limit: int = 50):
 # --- Legacy Job Endpoints (backward compatibility) ---
 
 @app.get("/api/agents")
-async def list_agents():
+async def list_agents(_: None = require_api_key):
     """
     List registered agents.
 
@@ -576,7 +689,7 @@ async def list_agents():
 
 
 @app.get("/api/agents/{agent_name}/chat")
-async def chat_with_agent(agent_name: str, request: AgentChatRequest):
+async def chat_with_agent(agent_name: str, request: AgentChatRequest, _: None = require_api_key):
     """
     Send a message to an agent.
 
@@ -624,8 +737,232 @@ async def chat_with_agent(agent_name: str, request: AgentChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/agents/{agent_name}/batch")
+async def batch_submit_tasks(agent_name: str, request: BatchTasksRequest, _: None = require_api_key):
+    """
+    Submit multiple tasks to an agent's queue in parallel.
+    
+    Each task will be distributed to available workers via Redis Consumer Groups.
+    Each task gets its own unique job_id, but all are grouped under a batch_id.
+    
+    Returns immediately with task IDs (non-blocking by default).
+    """
+    try:
+        # Generate batch_id (unique identifier for the batch)
+        batch_id = request.batch_id or str(uuid.uuid4())
+        
+        # Check if batch already exists
+        existing_batch = database.get_batch(batch_id)
+        is_new_batch = existing_batch is None
+        
+        task_ids = []
+        job_ids = []  # Each task gets its own job_id
+        trace_ids = []  # Each task gets its own trace_id
+        
+        for i, task_payload in enumerate(request.tasks):
+            # Generate unique job_id and trace_id for each task
+            job_id = str(uuid.uuid4())  # Unique job_id for each task
+            trace_id = str(uuid.uuid4())  # Unique trace_id for each task
+            job_ids.append(job_id)
+            trace_ids.append(trace_id)
+            
+            # Include job_id, trace_id, and batch_id in task payload
+            task_with_job = {
+                **task_payload,
+                "job_id": job_id,  # Unique job_id for each task
+                "trace_id": trace_id,  # Unique trace_id for each task
+                "_batch_id": batch_id,  # Link back to the batch
+                "_batch_index": (existing_batch["task_count"] if existing_batch else 0) + i,
+            }
+            
+            task_id = await message_bus.publish_task(agent_name, task_with_job)
+            task_ids.append(task_id)
+            
+            logger.debug(
+                f"Published task {i+1}/{len(request.tasks)} to {agent_name}: "
+                f"task_id={task_id}, job_id={job_id}, trace_id={trace_id}, batch_id={batch_id}"
+            )
+        
+        # Create or update batch entry in database
+        if is_new_batch:
+            # Create new batch entry
+            database.create_batch(
+                batch_id=batch_id,
+                agent_name=agent_name,
+                task_count=len(request.tasks),
+                job_ids=job_ids,
+                task_ids=task_ids,
+                inputs={"tasks": request.tasks},
+            )
+            # Update status to "submitted" if not waiting
+            if not request.wait:
+                database.update_batch_status(batch_id, "submitted")
+        else:
+            # Add tasks to existing batch (batch_id was provided, reuse existing batch)
+            database.add_tasks_to_batch(
+                batch_id,
+                job_ids,
+                task_ids,
+                inputs=_merge_batch_inputs(existing_batch.get("inputs"), request.tasks),
+            )
+        
+        logger.info(f"Published {len(task_ids)} tasks to {agent_name} workers with batch_id={batch_id}")
+        
+        if request.wait:
+            # Wait for all responses
+            results = []
+            for task_id in task_ids:
+                response = await message_bus.wait_for_response(task_id, timeout_sec=300)
+                results.append({
+                    "task_id": task_id,
+                    "response": response
+                })
+            
+            # Update batch status
+            database.update_batch_status(
+                batch_id,
+                "completed",
+                outputs={"results": results}
+            )
+            
+            return {
+                "batch_id": batch_id,
+                "agent_name": agent_name,
+                "status": "completed",
+                "task_count": len(job_ids),
+                "task_ids": task_ids,
+                "job_ids": job_ids,
+                "trace_ids": trace_ids,
+                "results": results
+            }
+        
+        return {
+            "batch_id": batch_id,
+            "agent_name": agent_name,
+            "status": "submitted",
+            "task_count": len(job_ids),
+            "task_ids": task_ids,
+            "job_ids": job_ids,
+            "trace_ids": trace_ids
+        }
+    
+    except Exception as e:
+        logger.exception("Failed to batch submit tasks")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/batches/{batch_id}/add-tasks")
+async def add_tasks_to_batch(batch_id: str, request: AddTasksToBatchRequest, _: None = require_api_key):
+    """
+    Add more tasks to an existing batch.
+    
+    Useful for adding an aggregator agent to a batch after evaluator workers complete.
+    Each new task gets its own unique job_id, but all are grouped under the batch_id.
+    """
+    try:
+        # Verify batch exists and is still running
+        batch = database.get_batch(batch_id)
+        if not batch:
+            raise HTTPException(status_code=404, detail="Batch not found")
+        if batch["status"] not in ("running", "submitted"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot add tasks to batch with status: {batch['status']}"
+            )
+        
+        # Generate new job_ids and trace_ids for the new tasks
+        new_job_ids = []
+        new_trace_ids = []
+        new_task_ids = []
+        
+        for i, task_payload in enumerate(request.tasks):
+            job_id = str(uuid.uuid4())  # Unique job_id for each new task
+            trace_id = str(uuid.uuid4())
+            new_job_ids.append(job_id)
+            new_trace_ids.append(trace_id)
+            
+            # Each task gets its own job_id, but links back to the batch
+            task_with_job = {
+                **task_payload,
+                "job_id": job_id,  # Unique job_id for each task
+                "trace_id": trace_id,
+                "_batch_id": batch_id,  # Link back to the batch
+                "_batch_index": batch["task_count"] + i,  # Continue indexing
+            }
+            
+            task_id = await message_bus.publish_task(request.agent_name, task_with_job)
+            new_task_ids.append(task_id)
+            
+            logger.debug(
+                f"Added task {i+1}/{len(request.tasks)} to batch {batch_id}: "
+                f"task_id={task_id}, job_id={job_id}, trace_id={trace_id}"
+            )
+        
+        # Update batch record with new job_ids, task_ids, and merged inputs
+        database.add_tasks_to_batch(
+            batch_id,
+            new_job_ids,
+            new_task_ids,
+            inputs=_merge_batch_inputs(batch.get("inputs"), request.tasks),
+        )
+        
+        if request.wait:
+            # Wait for all responses
+            results = []
+            for task_id in new_task_ids:
+                response = await message_bus.wait_for_response(task_id, timeout_sec=300)
+                results.append({
+                    "task_id": task_id,
+                    "response": response
+                })
+            
+            return {
+                "batch_id": batch_id,
+                "status": batch["status"],
+                "added_job_ids": new_job_ids,
+                "added_trace_ids": new_trace_ids,
+                "added_task_ids": new_task_ids,
+                "total_tasks": batch["task_count"] + len(new_task_ids),
+                "total_job_ids": len(batch["job_ids"]) + len(new_job_ids),
+                "results": results,
+            }
+        
+        updated_batch = database.get_batch(batch_id)
+        return {
+            "batch_id": batch_id,
+            "status": updated_batch["status"] if updated_batch else batch["status"],
+            "added_job_ids": new_job_ids,
+            "added_trace_ids": new_trace_ids,
+            "added_task_ids": new_task_ids,
+            "total_tasks": updated_batch["task_count"] if updated_batch else batch["task_count"] + len(new_task_ids),
+            "total_job_ids": len(updated_batch["job_ids"]) if updated_batch else len(batch["job_ids"]) + len(new_job_ids),
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to add tasks to batch")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/batches/{batch_id}")
+async def get_batch(batch_id: str, _: None = require_api_key):
+    """Get batch metadata by ID."""
+    batch = database.get_batch(batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    return batch
+
+
+@app.get("/api/batches")
+async def list_batches(limit: int = 50, _: None = require_api_key):
+    """List recent batches."""
+    batches = database.list_batches(limit=limit)
+    return {"batches": batches, "limit": limit}
+
+
 @app.get("/api/agents/{agent_name}/tools")
-async def get_agent_tools(agent_name: str):
+async def get_agent_tools(agent_name: str, _: None = require_api_key):
     """
     Get detailed tool information for a specific agent.
 
@@ -727,7 +1064,7 @@ async def get_agent_tools(agent_name: str):
 
 
 @app.get("/api/responses/{task_id}/resolved")
-async def get_resolved_response(task_id: str):
+async def get_resolved_response(task_id: str, _: None = require_api_key):
     """
     Resolve and return a task response. If the response was offloaded to storage,
     this endpoint fetches the full payload from MinIO/S3 and returns it.
@@ -819,6 +1156,7 @@ async def get_resolved_response(task_id: str):
 @app.get("/api/traces")
 async def list_traces(
     job_id: str | None = None,
+    _: None = require_api_key,
     agent_name: str | None = None,
     limit: int = 100,
 ):
@@ -837,7 +1175,7 @@ async def list_traces(
 
 
 @app.get("/api/traces/grouped")
-async def get_grouped_traces(limit: int = 50):
+async def get_grouped_traces(limit: int = 50, _: None = require_api_key):
     """
     Get traces grouped by job_id.
     
@@ -888,7 +1226,7 @@ async def get_grouped_traces(limit: int = 50):
 
 
 @app.get("/api/traces/{trace_id}")
-async def get_trace(trace_id: str):
+async def get_trace(trace_id: str, _: None = require_api_key):
     """Get a single trace by id with full payload."""
     try:
         trace = database.get_trace(trace_id)
@@ -903,7 +1241,7 @@ async def get_trace(trace_id: str):
 
 
 @app.get("/api/metrics")
-async def get_metrics():
+async def get_metrics(_: None = require_api_key):
     """
     Get system metrics.
 
@@ -933,7 +1271,7 @@ async def get_metrics():
 # --- Container Logs Endpoints ---
 
 @app.get("/api/logs/containers")
-async def list_containers():
+async def list_containers(_: None = require_api_key):
     """
     List all Docker containers (project-agnostic).
     
@@ -1002,6 +1340,7 @@ async def list_containers():
 @app.get("/api/logs/containers/{container_name}")
 async def get_container_logs(
     container_name: str,
+    _: None = require_api_key,
     tail: int = 100,
     since: str | None = None,
     timestamps: bool = True
@@ -1097,6 +1436,7 @@ async def websocket_container_logs(websocket: WebSocket, container_name: str):
     Args:
         container_name: Container name or ID to stream logs from
     """
+    await verify_websocket_api_key(websocket)
     await websocket.accept()
     logger.info(f"WebSocket connected for container logs: {container_name}")
     
@@ -1224,6 +1564,7 @@ async def websocket_events(websocket: WebSocket):
 
     Streams job submissions, completions, trace events with throttling.
     """
+    await verify_websocket_api_key(websocket)
     await websocket.accept()
     throttler = EventThrottler(max_per_second=10)
 
@@ -1277,6 +1618,7 @@ async def websocket_prompt_traces(websocket: WebSocket, prompt_id: str):
     Sends hierarchical trace spans similar to LangSmith/Langfuse structure.
     """
     try:
+        await verify_websocket_api_key(websocket)
         await websocket.accept()
         logger.info(f"WebSocket connected for prompt {prompt_id}")
         # Small delay to ensure connection is fully established
@@ -1299,14 +1641,28 @@ async def websocket_prompt_traces(websocket: WebSocket, prompt_id: str):
         """
         Build hierarchical trace tree from flat traces.
         Groups by agent runs and nests tool calls/LLM calls within them.
+        
+        Prevents task_start events from being children of other task_start events.
         """
         # Index traces by ID for quick lookup
         trace_map = {t['id']: t for t in traces}
         roots = []
         
         # First pass: identify parent-child relationships
+        # But prevent task_start events from being children of other task_start events
         for trace in traces:
+            event_type = trace.get('event_type', '')
             parent_id = trace.get('parent_id')
+            
+            # Prevent task_start events from being children of other task_start events
+            if event_type == 'task_start' and parent_id and parent_id in trace_map:
+                parent = trace_map[parent_id]
+                parent_event_type = parent.get('event_type', '')
+                if parent_event_type == 'task_start':
+                    # This task_start should be a root, not a child of another task_start
+                    roots.append(trace)
+                    continue
+            
             if parent_id and parent_id in trace_map:
                 parent = trace_map[parent_id]
                 if 'children' not in parent:
@@ -1537,8 +1893,241 @@ async def websocket_prompt_traces(websocket: WebSocket, prompt_id: str):
             pass
 
 
-    @app.post("/api/prompts/{prompt_id}/cancel", response_model=CancelPromptResponse)
-    async def cancel_prompt(prompt_id: str):
+@app.websocket("/ws/batches/{batch_id}")
+async def websocket_batch_traces(websocket: WebSocket, batch_id: str):
+    """
+    WebSocket endpoint for live trace streaming for a batch operation.
+    
+    Continuously fetches traces for all job_ids in the batch and streams them to the client.
+    Each job_id represents a separate task/job within the batch.
+    """
+    try:
+        await verify_websocket_api_key(websocket)
+        await websocket.accept()
+        logger.info(f"WebSocket connected for batch {batch_id}")
+        await asyncio.sleep(0.01)
+    except Exception as e:
+        logger.error(f"Failed to accept WebSocket connection for batch {batch_id}: {e}", exc_info=True)
+        return
+    
+    last_trace_id = 0
+    
+    def _parse_ts(ts: str | None) -> datetime | None:
+        if not ts:
+            return None
+        try:
+            return datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
+        except Exception:
+            return None
+    
+    def _build_trace_tree(traces: list[dict]) -> list[dict]:
+        """Build hierarchical trace tree from flat traces.
+        
+        For parallel batch tasks:
+        - Groups traces by job_id (each task has its own job_id)
+        - Each job_id group builds its own tree
+        - All task_start events are root-level siblings (one per job_id)
+        - Explicit parent_id relationships are preserved within each group
+        """
+        # Group traces by job_id
+        traces_by_job_id: dict[str, list[dict]] = {}
+        traces_without_job_id: list[dict] = []
+        
+        for trace in traces:
+            job_id = trace.get('job_id')
+            if job_id:
+                if job_id not in traces_by_job_id:
+                    traces_by_job_id[job_id] = []
+                traces_by_job_id[job_id].append(trace)
+            else:
+                traces_without_job_id.append(trace)
+        
+        # Build a tree for each job_id group
+        all_roots = []
+        
+        def build_tree_for_group(group_traces: list[dict]) -> list[dict]:
+            """Build hierarchical tree for a single job_id group."""
+            trace_map = {t['id']: t for t in group_traces}
+            roots = []
+            
+            # First pass: identify parent-child relationships
+            # Prevent task_start events from being children of other task_start events
+            for trace in group_traces:
+                event_type = trace.get('event_type', '')
+                parent_id = trace.get('parent_id')
+                
+                # Prevent task_start events from being children of other task_start events
+                if event_type == 'task_start' and parent_id and parent_id in trace_map:
+                    parent = trace_map[parent_id]
+                    parent_event_type = parent.get('event_type', '')
+                    if parent_event_type == 'task_start':
+                        # This task_start should be a root, not a child of another task_start
+                        roots.append(trace)
+                        continue
+                
+                if parent_id and parent_id in trace_map:
+                    parent = trace_map[parent_id]
+                    if 'children' not in parent:
+                        parent['children'] = []
+                    parent['children'].append(trace)
+                else:
+                    roots.append(trace)
+            
+            return roots
+        
+        # Build tree for each job_id group
+        for job_id, group_traces in traces_by_job_id.items():
+            group_spans = build_tree_for_group(group_traces)
+            all_roots.extend(group_spans)
+        
+        # Handle traces without job_id (legacy or non-batch traces)
+        if traces_without_job_id:
+            legacy_spans = build_tree_for_group(traces_without_job_id)
+            all_roots.extend(legacy_spans)
+        
+        return all_roots
+    
+    # Get event loop once for all executor calls
+    loop = asyncio.get_running_loop()
+    
+    # Helper to safely send WebSocket messages
+    async def safe_send(data: dict) -> bool:
+        try:
+            await websocket.send_json(data)
+            logger.debug(f"Sent WebSocket message type={data.get('type')} for batch {batch_id}")
+            return True
+        except RuntimeError as e:
+            if "closed" in str(e).lower() or "disconnect" in str(e).lower():
+                logger.debug(f"WebSocket connection closed for batch {batch_id}")
+            else:
+                logger.debug(f"RuntimeError sending WebSocket message for batch {batch_id}: {e}")
+            return False
+        except (ConnectionError, OSError) as e:
+            logger.debug(f"WebSocket connection error for batch {batch_id}: {e}")
+            return False
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "close message" in error_msg or "closed" in error_msg:
+                logger.debug(f"WebSocket closed for batch {batch_id}")
+            else:
+                logger.warning(f"Failed to send WebSocket message for batch {batch_id}: {e}")
+            return False
+    
+    # Load initial traces immediately on connection
+    try:
+        # Get batch record to fetch all job_ids
+        batch_record = await loop.run_in_executor(_db_executor, database.get_batch, batch_id)
+        if not batch_record:
+            raise HTTPException(status_code=404, detail="Batch not found")
+        
+        job_ids_in_batch = batch_record.get("job_ids", [])
+        if not job_ids_in_batch:
+            logger.info(f"No job_ids found in batch {batch_id}, sending empty traces")
+            await safe_send({
+                "type": "traces",
+                "data": {
+                    "spans": [],
+                    "count": 0
+                }
+            })
+        else:
+            # Fetch traces for all job_ids in the batch
+            initial_traces = await loop.run_in_executor(_db_executor, database.get_job_traces, job_ids_in_batch)
+            logger.info(f"Loaded {len(initial_traces)} initial traces for batch {batch_id} (job_ids: {len(job_ids_in_batch)})")
+            if initial_traces:
+                last_trace_id = max(t.get('id', 0) for t in initial_traces)
+                trace_tree = _build_trace_tree(initial_traces)
+                logger.info(f"Built trace tree with {len(trace_tree)} root spans for batch {batch_id}")
+                sent = await safe_send({
+                    "type": "traces",
+                    "data": {
+                        "spans": trace_tree,
+                        "count": len(initial_traces)
+                    }
+                })
+                if sent:
+                    logger.info(f"Successfully sent {len(initial_traces)} initial traces for batch {batch_id}")
+                else:
+                    logger.debug(f"Could not send initial traces for batch {batch_id} - connection may be closed")
+            else:
+                logger.info(f"No initial traces found for batch {batch_id}")
+                # Send empty traces to let frontend know we're connected
+                await safe_send({
+                    "type": "traces",
+                    "data": {
+                        "spans": [],
+                        "count": 0
+                    }
+                })
+    except Exception as e:
+        logger.error(f"Failed to load initial traces for batch {batch_id}: {e}", exc_info=True)
+    
+    # Poll for new traces continuously
+    try:
+        while True:
+            # Check connection state
+            if websocket.client_state.name != "CONNECTED":
+                logger.info(f"WebSocket disconnected for batch {batch_id}")
+                break
+            
+            # Get batch record to fetch current job_ids (may have been updated)
+            batch_record = await loop.run_in_executor(_db_executor, database.get_batch, batch_id)
+            if not batch_record:
+                logger.warning(f"Batch {batch_id} disappeared during streaming.")
+                break
+            
+            job_ids_in_batch = batch_record.get("job_ids", [])
+            if not job_ids_in_batch:
+                await asyncio.sleep(0.5)
+                continue
+            
+            # Get all traces for all job_ids in this batch (non-blocking)
+            traces = await loop.run_in_executor(_db_executor, database.get_job_traces, job_ids_in_batch)
+            
+            # Filter to only new traces
+            new_traces = [t for t in traces if t.get('id', 0) > last_trace_id]
+            
+            if new_traces:
+                # Update last seen ID
+                last_trace_id = max(t.get('id', 0) for t in new_traces)
+                
+                # Build hierarchical tree structure
+                trace_tree = _build_trace_tree(new_traces)
+                
+                logger.debug(f"Sending {len(new_traces)} new traces ({len(trace_tree)} root spans) for batch {batch_id}")
+                
+                # Send tree structure to client
+                sent = await safe_send({
+                    "type": "traces",
+                    "data": {
+                        "spans": trace_tree,
+                        "count": len(new_traces)
+                    }
+                })
+                if sent:
+                    logger.debug(f"Successfully sent {len(new_traces)} new traces for batch {batch_id}")
+                else:
+                    # Connection closed, exit loop
+                    break
+            
+            # Poll interval
+            await asyncio.sleep(0.5)
+    
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket client disconnected for batch {batch_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error for batch {batch_id}: {e}", exc_info=True)
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "data": {"error": str(e)}
+            })
+        except:
+            pass
+
+
+@app.post("/api/prompts/{prompt_id}/cancel", response_model=CancelPromptResponse)
+async def cancel_prompt(prompt_id: str, _: None = require_api_key):
         """Request cancellation of a running prompt. This sets a cancel flag and updates status."""
         try:
             # Signal cancel to runtime via message bus

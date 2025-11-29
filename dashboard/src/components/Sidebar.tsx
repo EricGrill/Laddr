@@ -8,6 +8,7 @@ const navigation = [
   { name: 'Playground', href: '/playground', icon: Play },
   { name: 'Playground History', href: '/playground-history', icon: Clock },
   { name: 'Traces', href: '/traces', icon: GitBranch },
+  { name: 'Batches', href: '/batches', icon: GitBranch },
   { name: 'Logs', href: '/logs', icon: Terminal },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];

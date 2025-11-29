@@ -17,6 +17,7 @@ import uuid
 import logging
 
 from .config import AgentConfig, BackendFactory, LaddrConfig
+from .langfuse_tracer import get_langfuse_client
 from .tooling import ToolRegistry, discover_tools
 import os
 
@@ -254,9 +255,14 @@ class Agent:
 
         # Current job context
         self.current_job_id: str | None = None
+        # Current Langfuse root span for this job (if Langfuse is configured)
+        self._langfuse_span: Any | None = None
 
-        # Tracing controls (configurable via @actor decorator class attributes)
-        self._trace_enabled: bool = bool(getattr(self.__class__, "TRACE_ENABLED", True))
+        # Tracing controls (configurable via @actor decorator class attributes
+        # and global LaddrConfig.enable_tracing flag)
+        class_trace_enabled = bool(getattr(self.__class__, "TRACE_ENABLED", True))
+        config_trace_enabled = bool(getattr(self.env_config, "enable_tracing", True))
+        self._trace_enabled: bool = bool(class_trace_enabled and config_trace_enabled)
         mask = getattr(self.__class__, "TRACE_MASK", set()) or set()
         try:
             self._trace_mask: set[str] = set(mask)
@@ -570,6 +576,48 @@ class Agent:
         # Set up job context (support both job_id and prompt_id for compatibility)
         execution_id = task.get("prompt_id") or task.get("job_id") or str(uuid.uuid4())
         self.current_job_id = execution_id  # Keep internal name for now
+        
+        # Extract trace_id from task if present (for batch operations)
+        self.current_trace_id = task.get("trace_id")
+        batch_id = task.get("_batch_id")
+        batch_index = task.get("_batch_index")
+
+        def _finalize_batch_response(response: dict) -> dict:
+            if not batch_id:
+                return response
+            try:
+                self.database.record_batch_task_result(
+                    batch_id=batch_id,
+                    job_id=response.get("job_id") or execution_id,
+                    response=response,
+                    metadata={
+                        "agent_name": self.config.name,
+                        "batch_index": batch_index,
+                    },
+                )
+            except Exception:
+                logger.exception("Failed to record batch result", exc_info=True)
+            return response
+
+        # Initialize Langfuse span for this job if enabled and credentials are configured.
+        self._langfuse_span = None
+        try:
+            if getattr(self.env_config, "langfuse_enabled", True):
+                lf_client = get_langfuse_client()
+                if lf_client is not None:
+                    # Parent span for the entire job/prompt execution
+                    # Use agent_name:job_id for easier filtering in Langfuse.
+                    self._langfuse_span = lf_client.start_span(
+                        name=f"{self.config.name}:{execution_id}",
+                        input={
+                            "job_id": execution_id,
+                            "agent": self.config.name,
+                            "task": task,
+                        },
+                    )
+        except Exception:
+            # Langfuse integration must never break runtime
+            self._langfuse_span = None
 
         self.memory = AgentMemory(
             agent_name=self.config.name,
@@ -663,20 +711,20 @@ class Agent:
 
                 # Map statuses through
                 if res_status == "error":
-                    return {
+                    return _finalize_batch_response({
                         "status": "error",
                         "error": result.get("error") or "error",
                         "result": result,
                         "job_id": execution_id,
                         "prompt_id": execution_id
-                    }
+                    })
                 if res_status in {"incomplete", "canceled"}:
-                    return {
+                    return _finalize_batch_response({
                         "status": res_status,
                         "result": result,
                         "job_id": execution_id,
                         "prompt_id": execution_id
-                    }
+                    })
 
             # Default: treat as successful completion and return extracted payload
             outputs = result.get("result") if isinstance(result, dict) else result
@@ -696,12 +744,12 @@ class Agent:
                 except Exception:
                     pass
 
-            return {
+            return _finalize_batch_response({
                 "status": "success",
                 "result": outputs,
                 "job_id": execution_id,
                 "prompt_id": execution_id,
-            }
+            })
 
         except Exception as e:
             # Trace error
@@ -717,12 +765,27 @@ class Agent:
                 }
             )
 
-            return {
+            return _finalize_batch_response({
                 "status": "error",
                 "error": str(e),
                 "job_id": execution_id,
                 "prompt_id": execution_id
-            }
+            })
+        finally:
+            # Always end Langfuse span for this job if it was started
+            if self._langfuse_span is not None:
+                try:
+                    self._langfuse_span.end()
+                except Exception:
+                    pass
+                # Best-effort flush for near-real-time visibility
+                try:
+                    lf_client = get_langfuse_client()
+                    if lf_client is not None and hasattr(lf_client, "flush"):
+                        lf_client.flush()
+                except Exception:
+                    pass
+                self._langfuse_span = None
 
     async def execute_plan(self, plan: list[dict], task: dict) -> Any:
         """
@@ -1284,27 +1347,51 @@ class Agent:
                 # Agent is done - check if it's actually a successful completion or an error
                 answer = action.get("answer", response)
                 
-                # Detect if the agent is reporting inability to complete the task
-                error_indicators = [
-                    "unable to complete",
-                    "cannot complete",
-                    "missing",
-                    "not set",
-                    "not functional",
-                    "failed due to",
-                    "error:",
-                    "cannot proceed",
-                    "not available"
-                ]
+                # Check if answer is a dict with explicit error status
+                # IMPORTANT: Don't treat structured responses as errors if they contain actual results
+                # (e.g., evaluation results may have "status": "error" as part of the evaluation data)
+                is_explicit_error = False
+                if isinstance(answer, dict):
+                    status_is_error = answer.get("status") == "error"
+                    has_error_field = "error" in answer
+                    has_result_field = "result" in answer
+                    has_evaluation_data = any(key in answer for key in ["evaluation", "awarded_marks", "confidence_score", "question_id", "subpart", "max_marks"])
+                    has_result_structure = "iterations" in answer or "history" in answer
+                    
+                    # Only treat as agent error if:
+                    # 1. Status is "error" AND there's no result/evaluation data (agent failed)
+                    # 2. There's an error field but no result field (agent failed)
+                    # BUT NOT if there's evaluation data or result structure (agent succeeded, just reporting results)
+                    if status_is_error:
+                        # If status is "error" but there's evaluation data or result structure,
+                        # it's likely an evaluation result or full result structure, not an agent error
+                        is_explicit_error = not has_evaluation_data and not has_result_field and not has_result_structure
+                    elif has_error_field:
+                        # Error field without result/evaluation/result structure data suggests agent failure
+                        is_explicit_error = not has_result_field and not has_evaluation_data and not has_result_structure
                 
-                answer_lower = str(answer).lower()
-                is_error = any(indicator in answer_lower for indicator in error_indicators)
+                # Detect if the agent is reporting inability to complete the task (only for string answers)
+                is_text_error = False
+                if isinstance(answer, str):
+                    error_indicators = [
+                        "unable to complete",
+                        "cannot complete",
+                        "missing",
+                        "not set",
+                        "not functional",
+                        "failed due to",
+                        "error:",
+                        "cannot proceed",
+                        "not available"
+                    ]
+                    answer_lower = answer.lower()
+                    is_text_error = any(indicator in answer_lower for indicator in error_indicators)
                 
                 # Also check if all tool calls failed
                 tool_calls = [h for h in history if h.get("action") == "tool"]
                 all_tools_failed = len(tool_calls) > 0 and all("error" in h for h in tool_calls)
                 
-                if is_error or all_tools_failed:
+                if is_explicit_error or is_text_error or all_tools_failed:
                     return {
                         "status": "error",
                         "error": answer,
@@ -1609,10 +1696,34 @@ Provide a clear, complete final answer based on this information."""
             return
         if event_type in self._trace_mask:
             return
+
+        # 1) Write to our internal DB *only* when Langfuse is not active for this job.
+        # This ensures that when Langfuse tracing is enabled, traces are not duplicated
+        # into the Laddr database (except for non-agent code paths that call
+        # DatabaseService.append_trace() directly).
+        if self._langfuse_span is None:
+            try:
+                # Include trace_id in payload if available (for batch operations)
+                if hasattr(self, "current_trace_id") and self.current_trace_id:
+                    payload = {**payload, "trace_id": self.current_trace_id}
+
+                self.database.append_trace(job_id, agent_name, event_type, payload)
+            except Exception:
+                # Tracing must never break runtime
+                pass
+
+        # 2) Additionally, if a Langfuse span is active for this job, create a child span.
         try:
-            self.database.append_trace(job_id, agent_name, event_type, payload)
+            if self._langfuse_span is not None:
+                child = self._langfuse_span.start_span(
+                    name=f"{agent_name}:{event_type}",
+                    input=payload,
+                )
+                # We don't use the full context manager pattern; end immediately.
+                if hasattr(child, "end"):
+                    child.end()
         except Exception:
-            # Tracing must never break runtime
+            # Langfuse integration must never break runtime
             pass
     
     def _build_tool_documentation(self) -> str:

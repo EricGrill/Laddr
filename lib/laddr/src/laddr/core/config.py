@@ -72,14 +72,14 @@ class LaddrConfig(BaseSettings):
     
     Supports pluggable backends for all infrastructure:
     - queue_backend: "redis" (default) | "memory"
-    - db_backend: "postgres" (default) | "sqlite"
+    - db_backend: "sqlite" (default) | "postgres"
     - llm_backend: "noop" (default) | "openai" | "anthropic" | "gemini"
     - cache_backend: "inmemory" (default) | "redis"
     """
 
     # Pluggable backend selection
     queue_backend: str = Field(default="redis", description="Message queue backend")
-    db_backend: str = Field(default="postgres", description="Database backend")
+    db_backend: str = Field(default="sqlite", description="Database backend")
     llm_backend: str = Field(default="noop", description="LLM backend (noop=echo)")
     llm_model: str | None = Field(default=None, description="LLM model name (optional, backend-specific)")
     openai_base_url: str | None = Field(default=None, description="OpenAI-compatible base URL (e.g., vLLM)")
@@ -87,8 +87,8 @@ class LaddrConfig(BaseSettings):
 
     # Database connection
     database_url: str = Field(
-        default="postgresql://postgres:postgres@localhost:5432/laddr",
-        description="Database connection URL (postgres or sqlite)",
+        default="sqlite:///./laddr.db",
+        description="Database connection URL (sqlite or postgres)",
     )
 
     # Redis connection (for queue and optional cache)
@@ -140,6 +140,12 @@ class LaddrConfig(BaseSettings):
     # Tracing and metrics (stored in DB, not external services)
     enable_tracing: bool = Field(default=True, description="Enable internal tracing to DB")
     enable_metrics: bool = Field(default=True, description="Enable internal metrics collection")
+
+    # Langfuse external tracing (optional, spans created directly in runtime)
+    langfuse_enabled: bool = Field(
+        default=True,
+        description="Enable Langfuse external tracing when environment variables are configured",
+    )
 
     # Large Response Storage
     enable_large_response_storage: bool = Field(
@@ -234,6 +240,11 @@ class LaddrConfig(BaseSettings):
     # Dashboard auth (optional)
     laddr_dash_users: str | None = Field(
         default=None, description="Dashboard user credentials (user:pass)"
+    )
+
+    # API Key for protecting API routes (optional)
+    laddr_api_key: str | None = Field(
+        default=None, description="API key for protecting API routes. If set, all routes require this key."
     )
 
     class Config:
@@ -451,7 +462,7 @@ class ProjectConfig(BaseModel):
 
     # Backend selections (can override env defaults)
     queue_backend: str = Field(default="redis", description="Message queue backend")
-    db_backend: str = Field(default="postgres", description="Database backend")
+    db_backend: str = Field(default="sqlite", description="Database backend")
     llm_backend: str = Field(default="noop", description="LLM backend")
     cache_backend: str = Field(default="inmemory", description="Cache backend")
 

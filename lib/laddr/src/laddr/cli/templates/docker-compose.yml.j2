@@ -1,21 +1,4 @@
 services:
-  # PostgreSQL database for internal observability
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_USER: laddr
-      POSTGRES_PASSWORD: laddr
-      POSTGRES_DB: laddr
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U laddr"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   # Redis for message bus
   redis:
     image: redis:7-alpine
@@ -56,21 +39,17 @@ services:
     env_file: .env
     environment:
       PYTHONPATH: "/app"
-      DATABASE_URL: "postgresql://laddr:laddr@postgres:5432/laddr"
       REDIS_URL: "redis://redis:6379"
       MINIO_ENDPOINT: "minio:9000"
       MINIO_ACCESS_KEY: "minioadmin"
       MINIO_SECRET_KEY: "minioadmin123"
       MINIO_SECURE: "false"
       QUEUE_BACKEND: "redis"
-      DB_BACKEND: "postgres"
     volumes:
       - .:/app
       # Comment this out in production
       - /var/run/docker.sock:/var/run/docker.sock  # Mount Docker socket for container logs
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
       minio:
@@ -84,7 +63,7 @@ services:
       - "5173:5173"
     environment:
       - VITE_API_URL=http://api:${API_PORT:-8000}
-      - VITE_DASH_USERS=${EVENAGE_DASH_USERS:-admin:admin}
+      - VITE_DASH_USERS=${LADDR_DASH_USERS:-admin:admin}
     depends_on:
       - api
 
@@ -98,19 +77,15 @@ services:
     env_file: .env
     environment:
       PYTHONPATH: "/app"
-      DATABASE_URL: "postgresql://laddr:laddr@postgres:5432/laddr"
       REDIS_URL: "redis://redis:6379"
       MINIO_ENDPOINT: "minio:9000"
       MINIO_ACCESS_KEY: "minioadmin"
       MINIO_SECRET_KEY: "minioadmin123"
       MINIO_SECURE: "false"
       QUEUE_BACKEND: "redis"
-      DB_BACKEND: "postgres"
     volumes:
       - .:/app
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
       minio:
@@ -122,5 +97,4 @@ services:
 {% endfor %}
 
 volumes:
-  postgres_data:
   minio_data:

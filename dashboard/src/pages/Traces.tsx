@@ -1,17 +1,42 @@
-import { useState } from 'react';
-import { useGroupedTraces, useTrace } from '../lib/queries/traces';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useGroupedTraces, useTrace, useTraces } from '../lib/queries/traces';
 import { GitBranch, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function Traces() {
+  const [searchParams] = useSearchParams();
+  const jobIdFilter = searchParams.get('job_id');
+  
   const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState('Payload');
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
 
+  // If job_id filter is provided, use filtered traces; otherwise use grouped traces
+  const { data: filteredTraces } = useTraces(jobIdFilter ? { job_id: jobIdFilter } : undefined);
   const { data: groupedTraces, isLoading } = useGroupedTraces(50);
   const { data: selectedTrace } = useTrace(selectedId);
+
+  // Auto-expand the filtered job_id if provided
+  useEffect(() => {
+    if (jobIdFilter && !expandedJobs.has(jobIdFilter)) {
+      setExpandedJobs(new Set([jobIdFilter]));
+    }
+  }, [jobIdFilter, expandedJobs]);
+
+  // Convert filtered traces to grouped format if filtering by job_id
+  const displayTraces = jobIdFilter && filteredTraces
+    ? [{
+        job_id: jobIdFilter,
+        trace_count: filteredTraces.length,
+        agents: [...new Set(filteredTraces.map(t => t.agent_name).filter(Boolean))],
+        start_time: filteredTraces[0]?.timestamp || new Date().toISOString(),
+        end_time: filteredTraces[filteredTraces.length - 1]?.timestamp || new Date().toISOString(),
+        traces: filteredTraces,
+      }]
+    : groupedTraces;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -120,7 +145,7 @@ export default function Traces() {
     return colors[eventType] || 'text-gray-400';
   };
 
-  if (isLoading) return (
+  if (isLoading && !jobIdFilter) return (
     <div className="flex items-center justify-center h-64">
       <p className="text-gray-400">Loading traces...</p>
     </div>
@@ -129,17 +154,27 @@ export default function Traces() {
   return (
     <div className="space-y-4 flex flex-col">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Traces</h1>
+        <h1 className="text-2xl font-bold text-white">
+          {jobIdFilter ? `Traces for Job ${jobIdFilter.slice(0, 8)}...` : 'Traces'}
+        </h1>
         <div className="flex items-center gap-4">
+          {jobIdFilter && (
+            <button
+              onClick={() => window.history.replaceState({}, '', '/traces')}
+              className="text-sm text-[#1FB8CD] hover:text-cyan-300 transition-colors"
+            >
+              Clear Filter
+            </button>
+          )}
           <div className="text-xs text-gray-600 italic">* Cost estimates are approximate</div>
-          <div className="text-sm text-gray-500">{groupedTraces?.length || 0} job runs</div>
+          <div className="text-sm text-gray-500">{displayTraces?.length || 0} job runs</div>
         </div>
       </div>
 
       <div className="flex flex-row gap-6 items-start">
         <div className="flex-1 max-h-[80vh] overflow-y-auto pr-2 space-y-2">
-          {groupedTraces && groupedTraces.length > 0 ? (
-            groupedTraces.map((group) => {
+          {displayTraces && displayTraces.length > 0 ? (
+            displayTraces.map((group) => {
               const isExpanded = expandedJobs.has(group.job_id);
               const stats = calculateJobStats(group.traces || []);
               const jobDuration = calculateDuration(group.start_time, group.end_time);
