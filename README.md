@@ -56,9 +56,10 @@ Pre-defined, predictable pipelines where tasks flow through agents in a fixed se
 - **Fault tolerance** — Worker failures don't stop the system
 
 ### Observability & Monitoring
-- **Complete tracing** — Every agent action automatically logged to PostgreSQL
+- **Complete tracing** — Every agent action automatically logged (SQLite/PostgreSQL)
+- **Langfuse integration** — Optional external tracing with automatic span creation
 - **Real-time metrics** — Job status, duration, success rates, queue depth
-- **Interactive dashboard** — Beautiful UI to monitor agents, traces, and logs
+- **Interactive dashboard** — Beautiful UI to monitor agents, traces, batches, and logs
 - **Playground** — Test agents interactively with live streaming responses
 
 ### Developer Experience
@@ -69,6 +70,7 @@ Pre-defined, predictable pipelines where tasks flow through agents in a fixed se
 
 ### AI-Optimized Architecture
 - **Built-in delegation** — Agents can delegate tasks to other agents seamlessly
+- **Batch operations** — Execute multiple tasks in parallel with full tracking and WebSocket monitoring
 - **Parallel execution** — Process multiple independent tasks simultaneously
 - **Context management** — Automatic artifact storage for large payloads (>1MB)
 - **Smart retries** — Configurable retry logic and timeout handling per agent
@@ -78,6 +80,7 @@ Pre-defined, predictable pipelines where tasks flow through agents in a fixed se
 - **Queue-based messaging** — Redis Streams for reliable, distributed communication
 - **Artifact storage** — MinIO/S3 for handling large files and documents
 - **REST API** — FastAPI server with auto-generated OpenAPI documentation
+- **API security** — Optional API key authentication for all endpoints
 
 ### Extensibility
 - **Custom tools** — Add any Python function as an agent tool with `@tool` decorator
@@ -120,6 +123,14 @@ OPENAI_API_KEY=your_openai_key      # Get from https://platform.openai.com
 # Then: ollama pull gemma2:2b
 OLLAMA_BASE_URL=http://localhost:11434
 LLM_BACKEND=ollama  # Use local models instead of cloud APIs
+
+# Optional: API key authentication
+LADDR_API_KEY=your_api_key_here  # Protect API endpoints
+
+# Optional: Langfuse external tracing
+LANGFUSE_PUBLIC_KEY=your_public_key
+LANGFUSE_SECRET_KEY=your_secret_key
+LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
 > 💡 **Using Ollama?** See the [Ollama Integration Guide](docs/guides/ollama-integration.md) for complete setup instructions including Docker configuration.
@@ -134,7 +145,7 @@ laddr run dev
 This starts:
 - ✅ **API Server** at `http://localhost:8000`
 - ✅ **Dashboard** at `http://localhost:5173`
-- ✅ **PostgreSQL** for traces and job history
+- ✅ **SQLite** for traces and job history (default, or PostgreSQL if configured)
 - ✅ **Redis** for message queue
 - ✅ **MinIO** for artifact storage
 - ✅ **2 agents**: `coordinator` (orchestrator) and `researcher` (specialist)
@@ -333,6 +344,10 @@ Laddr includes a **production-ready FastAPI server** with comprehensive REST end
 | `GET` | `/api/agents` | List all available agents |
 | `GET` | `/api/agents/{agent_name}/tools` | Get agent's tools |
 | `GET` | `/api/agents/{agent_name}/chat` | Interactive chat with agent |
+| `POST` | `/api/agents/{agent_name}/batch` | Submit multiple tasks in parallel (batch) |
+| `GET` | `/api/batches` | List all batch operations |
+| `GET` | `/api/batches/{batch_id}` | Get batch status and results |
+| `POST` | `/api/batches/{batch_id}/add-tasks` | Add tasks to existing batch |
 
 ### Observability Endpoints
 
@@ -372,6 +387,47 @@ curl -X POST http://localhost:8000/api/jobs \
   "status": "queued",
   "created_at": "2025-01-15T10:30:00Z"
 }
+```
+
+### Example: Submit Batch Tasks
+
+Execute multiple tasks in parallel:
+
+```bash
+curl -X POST http://localhost:8000/api/agents/researcher/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tasks": [
+      {"query": "What is Python?"},
+      {"query": "What is JavaScript?"},
+      {"query": "What is Rust?"}
+    ],
+    "wait": false
+  }'
+
+# Response:
+{
+  "batch_id": "batch-abc-123",
+  "agent_name": "researcher",
+  "status": "submitted",
+  "task_count": 3,
+  "job_ids": ["job-1", "job-2", "job-3"]
+}
+```
+
+### API Authentication (Optional)
+
+Set `LADDR_API_KEY` environment variable to enable API key authentication:
+
+```bash
+# Using header
+curl -H "X-API-Key: your-api-key" http://localhost:8000/api/agents
+
+# Using Bearer token
+curl -H "Authorization: Bearer your-api-key" http://localhost:8000/api/agents
+
+# Using query parameter (WebSocket)
+ws://localhost:8000/ws/prompts/{prompt_id}?api_key=your-api-key
 ```
 
 ### Example: Get Job Result
@@ -419,6 +475,14 @@ Laddr includes a **beautiful React dashboard** with real-time monitoring:
 - LLM interactions
 - Delegation flows
 - Filter by job, agent, or time range
+- Job ID filtering for focused trace views
+
+ **Batches**
+- View all batch operations
+- Real-time batch progress monitoring
+- Detailed batch execution traces
+- Task result aggregation
+- WebSocket streaming for live updates
 
  **Metrics**
 - System health overview
@@ -453,6 +517,7 @@ open http://localhost:5173
 - `/` — Dashboard home with metrics
 - `/playground` — Interactive agent testing
 - `/traces` — Execution traces and history
+- `/batches` — Batch operations management
 - `/agents` — Agent management
 - `/logs` — Container logs viewer
 - `/settings` — Configuration
@@ -481,15 +546,17 @@ API → Redis Stream → Worker 1, Worker 2, Worker 3
                  Store result in Postgres
 ```
 
-### Trace Storage (PostgreSQL)
+### Trace Storage (SQLite/PostgreSQL)
 
-All agent executions are **automatically traced** to PostgreSQL:
+All agent executions are **automatically traced** to the database:
 
+- **Default: SQLite** — Simple, file-based storage (no setup required)
+- **PostgreSQL option** — Use `DB_BACKEND=postgres` for production scale
 - **Complete history** — Every tool call, LLM interaction, delegation
 - **Structured data** — JSON traces with metadata
 - **Fast queries** — Indexed by job_id, agent_name, timestamp
-- **No external dependencies** — Built-in, no Jaeger or DataDog needed
-- **Retention policies** — Configurable trace retention
+- **Langfuse integration** — Optional external tracing (automatic span creation)
+- **Smart storage** — Traces disabled with Postgres when Langfuse is enabled
 
 **Trace data includes:**
 - Tool calls and results
@@ -498,6 +565,14 @@ All agent executions are **automatically traced** to PostgreSQL:
 - Error stack traces
 - Token usage
 - Latency breakdown
+
+**Langfuse Setup:**
+```bash
+# Optional: Enable Langfuse external tracing
+LANGFUSE_PUBLIC_KEY=your_public_key
+LANGFUSE_SECRET_KEY=your_secret_key
+LANGFUSE_HOST=https://cloud.langfuse.com
+```
 
 ### Artifact Storage (MinIO/S3)
 
