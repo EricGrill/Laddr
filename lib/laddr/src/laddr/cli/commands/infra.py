@@ -55,7 +55,16 @@ def infra(show_config: bool):
 
         # Observability
         console.print("\n[green]Observability:[/green]")
-        console.print(f"  ├─ Tracing: [dim]{'enabled (DB)' if config.enable_tracing else 'disabled'}[/dim]")
+
+        if not config.enable_tracing:
+            tracing_status = "disabled"
+        elif getattr(config, "db_backend", "sqlite") == "postgres":
+            # Even if ENABLE_TRACING is true, trace writes are disabled on Postgres
+            tracing_status = "disabled (Postgres backend)"
+        else:
+            tracing_status = "enabled (DB)"
+
+        console.print(f"  ├─ Tracing: [dim]{tracing_status}[/dim]")
         console.print(f"  └─ Metrics: [dim]{'enabled (DB)' if config.enable_metrics else 'disabled'}[/dim]")
 
         console.print()

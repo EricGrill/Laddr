@@ -124,7 +124,8 @@ def list_prompts(limit: int):
         from laddr.core import DatabaseService, LaddrConfig
 
         config = LaddrConfig()
-        db = DatabaseService(config.database_url)
+        # For CLI inspection we don't need external tracing; disable by passing None.
+        db = DatabaseService(config.database_url, external_tracer=None)
 
         prompts = db.list_prompts(limit=limit)
 

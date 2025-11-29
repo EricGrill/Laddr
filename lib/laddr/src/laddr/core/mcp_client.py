@@ -568,7 +568,7 @@ class MCPClient:
                 },
                 "clientInfo": {
                     "name": "laddr",
-                    "version": "0.8.3"
+                    "version": "0.9.6"
                 }
             }
         }
