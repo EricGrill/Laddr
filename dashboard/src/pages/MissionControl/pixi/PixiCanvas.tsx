@@ -176,21 +176,23 @@ export function PixiCanvas() {
     function syncPackets() {
       const state = useEntityStore.getState();
       const jobs = Object.values(state.jobs);
-      const currentIds = new Set(jobs.map((j) => j.id));
 
-      // Remove old
+      // Only for truly active jobs, max 30 visible
+      const HIDDEN_STATES = new Set(['completed', 'cancelled', 'failed', 'paused']);
+      const activeJobs = jobs.filter((j) => !HIDDEN_STATES.has(j.state));
+      const visibleJobs = activeJobs.slice(0, 30);
+      const visibleIds = new Set(visibleJobs.map((j) => j.id));
+
+      // Remove packets that are no longer visible
       for (const [id, pc] of packetContainers) {
-        if (!currentIds.has(id)) {
+        if (!visibleIds.has(id)) {
           packetLayer.removeChild(pc);
           pc.destroy({ children: true });
           packetContainers.delete(id);
         }
       }
 
-      // Create new — only for active jobs (skip completed/cancelled/failed)
-      const HIDDEN_STATES = new Set(['completed', 'cancelled', 'failed']);
-      for (const j of jobs) {
-        if (HIDDEN_STATES.has(j.state)) continue;
+      for (const j of visibleJobs) {
         if (!packetContainers.has(j.id)) {
           const pc = createPacket(j.type, j.priority, j.state, j.progress ?? 0);
           packetContainers.set(j.id, pc);
