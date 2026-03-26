@@ -143,7 +143,7 @@ class WorkerProcess:
         self.config = load_worker_config(config_path)
         self.worker_id: str = self.config["worker_id"]
         self.node: str = self.config.get("node", self.worker_id)
-        self.llm_endpoint: str = self.config["llm"]["endpoint"]
+        self.llm_endpoint: str | None = self.config.get("llm", {}).get("endpoint")
         self.max_concurrent: int = self.config.get("max_concurrent", 2)
         self.redis_url: str = self.config["server"]["redis_url"]
 
@@ -166,10 +166,14 @@ class WorkerProcess:
         self._running = True
 
         # Discover models
-        try:
-            self._models = await discover_lmstudio_models(self.llm_endpoint)
-        except Exception:
-            logger.warning("Failed to discover LM Studio models; continuing with empty list")
+        if self.llm_endpoint:
+            try:
+                self._models = await discover_lmstudio_models(self.llm_endpoint)
+            except Exception:
+                logger.warning("Failed to discover LM Studio models; continuing with empty list")
+                self._models = []
+        else:
+            logger.info("No LLM endpoint configured — script-only worker")
             self._models = []
 
         # Register capabilities in Redis hash
@@ -376,10 +380,11 @@ class WorkerProcess:
                     break
 
                 # Refresh models from LM Studio
-                try:
-                    self._models = await discover_lmstudio_models(self.llm_endpoint)
-                except Exception:
-                    pass  # Keep stale model list
+                if self.llm_endpoint:
+                    try:
+                        self._models = await discover_lmstudio_models(self.llm_endpoint)
+                    except Exception:
+                        pass
 
                 capabilities = self._build_capabilities()
                 await self._redis.hset(

@@ -169,3 +169,35 @@ class TestLoadWorkerConfig:
         """Non-existent path raises FileNotFoundError."""
         with pytest.raises(FileNotFoundError):
             load_worker_config("/tmp/nonexistent_worker_config.yml")
+
+
+# ---------------------------------------------------------------------------
+# TestScriptOnlyWorkerConfig
+# ---------------------------------------------------------------------------
+
+
+class TestScriptOnlyWorkerConfig:
+    def test_loads_config_without_llm(self, tmp_path):
+        cfg = {
+            "node": "script-runner", "worker_id": "script-01",
+            "skills": ["script-exec"], "max_concurrent": 2,
+            "server": {"redis_url": "redis://localhost:6379"},
+        }
+        config_file = tmp_path / "worker.yml"
+        config_file.write_text(yaml.dump(cfg))
+        result = load_worker_config(str(config_file))
+        assert result["worker_id"] == "script-01"
+        assert "llm" not in result
+
+    def test_worker_process_init_without_llm(self, tmp_path):
+        from laddr.core.worker_process import WorkerProcess
+        cfg = {
+            "node": "script-runner", "worker_id": "script-01",
+            "skills": ["script-exec"], "max_concurrent": 2,
+            "server": {"redis_url": "redis://localhost:6379"},
+        }
+        config_file = tmp_path / "worker.yml"
+        config_file.write_text(yaml.dump(cfg))
+        worker = WorkerProcess(str(config_file))
+        assert worker.worker_id == "script-01"
+        assert worker.llm_endpoint is None
