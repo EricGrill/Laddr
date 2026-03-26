@@ -260,7 +260,10 @@ class WorkerProcess:
                             continue
                         self._seen_ids.add(job_id)
 
-                        job = json.loads(fields.get("payload", "{}"))
+                        # Dispatcher sends {"job": json.dumps(...)},
+                        # API sends {"payload": json.dumps(...), "job_id": ...}
+                        raw = fields.get("payload") or fields.get("job", "{}")
+                        job = json.loads(raw)
                         job.setdefault("job_id", job_id)
 
                         try:
