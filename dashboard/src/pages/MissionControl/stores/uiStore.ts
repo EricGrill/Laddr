@@ -11,6 +11,7 @@ import type {
 interface UIState {
   selectedEntity: EntitySelection;
   inspectorOpen: boolean;
+  fullscreen: boolean;
   playbackSpeed: number;
   filters: {
     jobStates: Set<JobState>;
@@ -20,6 +21,7 @@ interface UIState {
   };
   selectEntity: (entity: EntitySelection) => void;
   clearSelection: () => void;
+  toggleFullscreen: () => void;
   setPlaybackSpeed: (speed: number) => void;
   toggleJobStateFilter: (state: JobState) => void;
   toggleJobPriorityFilter: (priority: JobPriority) => void;
@@ -31,6 +33,7 @@ interface UIState {
 export const useUIStore = create<UIState>((set, get) => ({
   selectedEntity: null,
   inspectorOpen: false,
+  fullscreen: false,
   playbackSpeed: 1,
   filters: {
     jobStates: new Set<JobState>(),
@@ -45,6 +48,10 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   clearSelection() {
     set({ selectedEntity: null, inspectorOpen: false });
+  },
+
+  toggleFullscreen() {
+    set((s) => ({ fullscreen: !s.fullscreen }));
   },
 
   setPlaybackSpeed(speed) {

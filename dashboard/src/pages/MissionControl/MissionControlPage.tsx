@@ -1,3 +1,4 @@
+import { useEffect, useRef, useCallback } from "react";
 import { useMissionControl } from "./hooks/useMissionControl";
 import { SceneRoot } from "./scene/SceneRoot";
 import { TopBar } from "./ui/TopBar";
@@ -5,15 +6,75 @@ import { MCSidebar } from "./ui/Sidebar";
 import { InspectorPanel } from "./ui/InspectorPanel";
 import { AlertToasts } from "./ui/AlertToasts";
 import { EventTicker } from "./ui/EventTicker";
+import { useUIStore } from "./stores/uiStore";
 
 export default function MissionControlPage() {
   useMissionControl();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const fullscreen = useUIStore((s) => s.fullscreen);
+  const toggleFullscreen = useUIStore((s) => s.toggleFullscreen);
+
+  // Sync browser fullscreen API with store state
+  const enterFullscreen = useCallback(() => {
+    if (containerRef.current && !document.fullscreenElement) {
+      containerRef.current.requestFullscreen().catch(() => {});
+    }
+  }, []);
+
+  const exitFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (fullscreen) {
+      enterFullscreen();
+    } else {
+      exitFullscreen();
+    }
+  }, [fullscreen, enterFullscreen, exitFullscreen]);
+
+  // Sync store when user exits fullscreen via Escape
+  useEffect(() => {
+    const handler = () => {
+      if (!document.fullscreenElement && fullscreen) {
+        toggleFullscreen();
+      }
+    };
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, [fullscreen, toggleFullscreen]);
+
+  // Keyboard shortcut: F to toggle fullscreen
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "f" || e.key === "F") {
+        // Don't trigger if user is typing in an input
+        if (
+          e.target instanceof HTMLInputElement ||
+          e.target instanceof HTMLTextAreaElement
+        ) {
+          return;
+        }
+        e.preventDefault();
+        toggleFullscreen();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [toggleFullscreen]);
 
   return (
-    <div className="flex flex-col h-full w-full bg-[#0a0e1a] text-white overflow-hidden">
+    <div
+      ref={containerRef}
+      className={`flex flex-col h-full w-full bg-[#0a0e1a] text-white overflow-hidden ${
+        fullscreen ? "fixed inset-0 z-50" : ""
+      }`}
+    >
       <TopBar />
       <div className="flex flex-1 overflow-hidden">
-        <MCSidebar />
+        {!fullscreen && <MCSidebar />}
         <div className="flex-1 relative">
           <SceneRoot />
           <AlertToasts />

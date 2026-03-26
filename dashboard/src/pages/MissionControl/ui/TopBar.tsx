@@ -1,10 +1,12 @@
-// dashboard/src/pages/MissionControl/ui/TopBar.tsx
 import { useTransportStore } from "../stores/transportStore";
 import { useEntityStore } from "../stores/entityStore";
+import { useUIStore } from "../stores/uiStore";
 
 export function TopBar() {
   const isConnected = useTransportStore((s) => s.isConnected);
   const metrics = useEntityStore((s) => s.metrics);
+  const fullscreen = useUIStore((s) => s.fullscreen);
+  const toggleFullscreen = useUIStore((s) => s.toggleFullscreen);
 
   return (
     <div className="h-10 bg-[#0d1220] border-b border-[#1a2040] flex items-center px-4 gap-6 text-xs flex-shrink-0">
@@ -14,10 +16,17 @@ export function TopBar() {
       <span className={isConnected ? "text-green-400" : "text-red-400"}>
         {isConnected ? "ONLINE" : "OFFLINE"}
       </span>
-      <div className="flex gap-4 ml-auto text-gray-400">
+      <div className="flex gap-4 ml-auto text-gray-400 items-center">
         <span>Jobs: <span className="text-white">{metrics.totalJobs}</span></span>
         <span>Agents: <span className="text-white">{metrics.activeAgents}</span></span>
         <span>Errors: <span className={metrics.errorCount > 0 ? "text-red-400" : "text-white"}>{metrics.errorCount}</span></span>
+        <button
+          onClick={toggleFullscreen}
+          className="ml-2 px-2 py-1 rounded border border-[#2a3050] text-gray-400 hover:text-white hover:border-cyan-400/50 transition-colors"
+          title={fullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}
+        >
+          {fullscreen ? "EXIT FS" : "FULLSCREEN"}
+        </button>
       </div>
     </div>
   );
