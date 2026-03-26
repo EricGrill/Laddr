@@ -74,6 +74,10 @@ class WorkerRegistry:
             if entry["last_heartbeat"] >= cutoff
         ]
 
+    def list_all(self) -> list[dict]:
+        """Return all registered workers including stale ones."""
+        return list(self._store.values())
+
     def deregister(self, worker_id: str) -> None:
         """Remove a worker from the registry."""
         self._store.pop(worker_id, None)

@@ -31,6 +31,7 @@ except ImportError:
     logger.warning("Docker SDK not available. Container logs endpoints will be disabled.")
 
 from laddr import __version__ as pkg_version
+from laddr.api.mission_control import router as mission_control_router, set_deps as set_mc_deps
 from laddr.core import (
     AgentRunner,
     BackendFactory,
@@ -171,6 +172,18 @@ async def lifespan(app: FastAPI):
     # Create thread pool executor for non-blocking database operations
     _db_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="db")
 
+    # Inject dependencies into Mission Control WebSocket endpoint
+    try:
+        redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
+    except Exception:
+        redis_client = None
+    set_mc_deps({
+        "worker_registry": None,
+        "redis": redis_client,
+        "database": database,
+        "verify_ws_key": verify_websocket_api_key,
+    })
+
     logger.info("Laddr API server started")
     logger.info(f"Database: {config.database_url}")
     logger.info(f"Queue: {config.queue_backend}")
@@ -295,6 +308,9 @@ def verify_api_key(request: Request) -> None:
 
 # Alias for cleaner usage in route decorators
 require_api_key = Depends(verify_api_key)
+
+# Mount sub-routers
+app.include_router(mission_control_router)
 
 
 def _merge_batch_inputs(existing_inputs: dict | None, new_tasks: list[dict[str, Any]]) -> dict:
