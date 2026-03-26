@@ -2221,9 +2221,10 @@ async def submit_capability_job(request: SubmitCapabilityJobRequest):
     priority = request.priority if request.priority in PRIORITY_LEVELS else "normal"
     stream_key = priority_stream_key(priority)
 
+    # Write as {"job_id": ..., "job": json.dumps(...)} to match dispatcher's read format
     try:
         redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
-        await redis_client.xadd(stream_key, job_payload)
+        await redis_client.xadd(stream_key, {"job_id": job_id, "job": json.dumps(job_payload)})
     except AttributeError:
         # message_bus is not Redis-backed; log and continue
         logger.warning("message_bus does not expose a Redis client; job not enqueued to stream")
@@ -2249,23 +2250,24 @@ async def submit_script_job(request: SubmitScriptJobRequest):
         "job_id": job_id,
         "task_type": "script",
         "command": request.command,
-        "timeout_seconds": str(request.timeout_seconds),
+        "timeout_seconds": int(request.timeout_seconds),
         "experiment_id": request.experiment_id or "",
-        "env": json.dumps(request.env),
-        "requirements": json.dumps({"mode": "explicit", "skills": ["script-exec"]}),
+        "env": request.env,
+        "requirements": {"mode": "explicit", "skills": ["script-exec"]},
         "priority": request.priority,
         "created_at": created_at,
     }
     if request.callback_url:
         job_payload["callback_url"] = request.callback_url
-        job_payload["callback_headers"] = json.dumps(request.callback_headers)
+        job_payload["callback_headers"] = request.callback_headers
 
     priority = request.priority if request.priority in PRIORITY_LEVELS else "normal"
     stream_key = priority_stream_key(priority)
 
+    # Write as {"job_id": ..., "job": json.dumps(...)} to match dispatcher's read format
     try:
         redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
-        await redis_client.xadd(stream_key, job_payload)
+        await redis_client.xadd(stream_key, {"job_id": job_id, "job": json.dumps(job_payload)})
     except AttributeError:
         logger.warning("message_bus does not expose a Redis client; job not enqueued to stream")
 
