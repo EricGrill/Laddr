@@ -36,22 +36,16 @@ function packetPosition(
   index: number,
   state: string,
 ): { x: number; y: number } {
-  // Grid layout around station — max 6 columns, wrap to rows
-  const cols = 6;
-  const col = index % cols;
-  const row = Math.floor(index / cols);
-  const spacingX = 18;
-  const spacingY = 16;
-  const offsetX = (col - (cols - 1) / 2) * spacingX;
-  const offsetY = -45 - row * spacingY;
+  // Simple horizontal row above station, max 5 shown
+  const offsetX = (index - 2) * 22;
 
   if (state === 'queued' || state === 'created') {
-    return { x: stationX + offsetX, y: stationY + offsetY };
+    return { x: stationX + offsetX, y: stationY - 55 };
   }
   if (state === 'processing') {
-    return { x: stationX + offsetX * 0.6, y: stationY - 35 - row * 14 };
+    return { x: stationX + offsetX, y: stationY - 45 };
   }
-  return { x: stationX + offsetX * 0.3, y: stationY - 25 };
+  return { x: stationX + offsetX * 0.5, y: stationY - 35 };
 }
 
 function buildStationList(stations: Record<string, { id: string; type: string; label: string; state: string; queueDepth: number }>): StationConfig[] {
@@ -177,10 +171,18 @@ export function PixiCanvas() {
       const state = useEntityStore.getState();
       const jobs = Object.values(state.jobs);
 
-      // Only for truly active jobs, max 30 visible
+      // Only active jobs, max 5 per station to keep it clean
       const HIDDEN_STATES = new Set(['completed', 'cancelled', 'failed', 'paused']);
       const activeJobs = jobs.filter((j) => !HIDDEN_STATES.has(j.state));
-      const visibleJobs = activeJobs.slice(0, 30);
+
+      // Group by station and limit to 5 per station
+      const byStation: Record<string, typeof activeJobs> = {};
+      for (const j of activeJobs) {
+        const sid = j.currentStationId ?? 'intake';
+        if (!byStation[sid]) byStation[sid] = [];
+        if (byStation[sid].length < 5) byStation[sid].push(j);
+      }
+      const visibleJobs = Object.values(byStation).flat();
       const visibleIds = new Set(visibleJobs.map((j) => j.id));
 
       // Remove packets that are no longer visible
@@ -286,18 +288,32 @@ export function PixiCanvas() {
           }
         }
 
-        // Tick packets
-        const jobs = Object.values(state.jobs);
+        // Tick packets — only visible ones (max 5 per station)
+        const allJobs = Object.values(state.jobs);
+        const HIDDEN = new Set(['completed', 'cancelled', 'failed', 'paused']);
+        const activeJobs = allJobs.filter((j) => !HIDDEN.has(j.state));
+
         const stationJobGroups: Record<string, MCJob[]> = {};
-        for (const j of jobs) {
+        for (const j of activeJobs) {
           const sid = j.currentStationId ?? 'intake';
           if (!stationJobGroups[sid]) stationJobGroups[sid] = [];
           stationJobGroups[sid].push(j);
         }
+
+        // Update station queue badges with real counts
+        for (const [sid, sc] of stationContainers) {
+          const count = stationJobGroups[sid]?.length ?? 0;
+          const stationData = state.stations[sid];
+          if (stationData) {
+            updateStation(sc, stationData.state as StationState, count);
+          }
+        }
+
         for (const [sid, group] of Object.entries(stationJobGroups)) {
           const layout = STATION_POSITIONS[sid] ?? STATION_POSITIONS.intake;
-          for (let i = 0; i < group.length; i++) {
-            const j = group[i];
+          const visible = group.slice(0, 5); // only 5 rendered per station
+          for (let i = 0; i < visible.length; i++) {
+            const j = visible[i];
             const pc = packetContainers.get(j.id);
             if (!pc) continue;
             const pos = packetPosition(layout.x, layout.y, i, j.state);
