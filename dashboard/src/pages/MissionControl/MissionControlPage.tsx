@@ -2,6 +2,8 @@ import { useMissionControl } from "./hooks/useMissionControl";
 import { SceneRoot } from "./scene/SceneRoot";
 import { TopBar } from "./ui/TopBar";
 import { MCSidebar } from "./ui/Sidebar";
+import { InspectorPanel } from "./ui/InspectorPanel";
+import { AlertToasts } from "./ui/AlertToasts";
 
 export default function MissionControlPage() {
   useMissionControl();
@@ -13,8 +15,9 @@ export default function MissionControlPage() {
         <MCSidebar />
         <div className="flex-1 relative">
           <SceneRoot />
+          <AlertToasts />
         </div>
-        {/* Inspector panel — Task 9 */}
+        <InspectorPanel />
       </div>
     </div>
   );
