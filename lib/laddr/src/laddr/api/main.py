@@ -366,6 +366,124 @@ async def root():
     }
 
 
+@app.get("/api/schema")
+async def api_schema():
+    """Machine-readable API schema for agent onboarding.
+
+    Returns a complete description of all endpoints, request/response shapes,
+    authentication, and recommended workflows. An agent reading this response
+    has everything it needs to use the Laddr API.
+    """
+    return {
+        "service": "Laddr API",
+        "version": pkg_version,
+        "auth": {
+            "method": "API key",
+            "header": "X-API-Key",
+            "description": "Pass API key via X-API-Key header or ?api_key= query parameter on all requests."
+        },
+        "workflows": {
+            "submit_and_poll": {
+                "description": "Submit a job, then poll for the result. No webhook needed.",
+                "steps": [
+                    "POST /api/jobs/capability with your job payload → returns {job_id}",
+                    "GET /api/jobs/{job_id}/result → 202 (pending), 200 (done), 404 (expired)",
+                    "Poll every 2-5 seconds until you get 200"
+                ]
+            },
+            "submit_script": {
+                "description": "Execute a shell command on a worker. Worker must have script-exec skill.",
+                "steps": [
+                    "POST /api/jobs/script with {command, timeout_seconds} → returns {job_id}",
+                    "GET /api/jobs/{job_id}/result → poll until 200"
+                ]
+            }
+        },
+        "endpoints": {
+            "POST /api/jobs/capability": {
+                "description": "Submit a job to the capability-based dispatcher. Workers are matched by model/skill requirements.",
+                "request": {
+                    "system_prompt": {"type": "string", "required": True, "description": "System instructions for the worker. Use 'Execute command' or 'Execute shell command' for script execution."},
+                    "user_prompt": {"type": "string", "required": False, "description": "The actual task or command to execute."},
+                    "inputs": {"type": "object", "required": False, "default": {}, "description": "Additional structured inputs."},
+                    "requirements": {"type": "object", "required": False, "default": {}, "description": "Capability requirements. {mode: 'generic'} for any worker, {mode: 'explicit', models: ['model-id']} for specific model."},
+                    "priority": {"type": "string", "required": False, "default": "normal", "enum": ["low", "normal", "high", "critical"]},
+                    "timeout_seconds": {"type": "integer", "required": False, "default": 300},
+                    "max_iterations": {"type": "integer", "required": False, "default": 5},
+                    "max_tool_calls": {"type": "integer", "required": False, "default": 20},
+                    "callback_url": {"type": "string", "required": False, "description": "Optional webhook URL for result delivery. Not needed if polling."},
+                    "callback_headers": {"type": "object", "required": False, "default": {}}
+                },
+                "response": {"job_id": "string", "status": "string"}
+            },
+            "POST /api/jobs/script": {
+                "description": "Submit a direct script execution job. Runs shell commands on workers with script-exec skill.",
+                "request": {
+                    "command": {"type": "string", "required": True, "description": "Shell command to execute."},
+                    "timeout_seconds": {"type": "integer", "required": False, "default": 300},
+                    "experiment_id": {"type": "string", "required": False, "description": "Persistent workspace ID for multi-step experiments."},
+                    "env": {"type": "object", "required": False, "default": {}, "description": "Extra environment variables."},
+                    "priority": {"type": "string", "required": False, "default": "normal", "enum": ["low", "normal", "high", "critical"]},
+                    "callback_url": {"type": "string", "required": False},
+                    "callback_headers": {"type": "object", "required": False, "default": {}}
+                },
+                "response": {"job_id": "string", "message": "string"}
+            },
+            "GET /api/jobs/{job_id}/result": {
+                "description": "Poll for job result. Returns 202 while pending, 200 when complete, 404 if expired.",
+                "response_codes": {
+                    "200": "Job complete — body contains {job_id, worker_id, task_type, result, completed_at}",
+                    "202": "Job still running — body contains {job_id, status, message}",
+                    "404": "Job not found or result expired (Redis TTL is 30 min, MinIO is permanent if enabled)"
+                }
+            },
+            "GET /api/workers": {
+                "description": "List all registered workers with their capabilities, models, and status.",
+                "response": {"workers": {"worker_id": {"worker_id": "string", "node": "string", "models": [], "mcps": [], "skills": [], "max_concurrent": "int", "active_jobs": "int"}}}
+            },
+            "GET /api/queue": {
+                "description": "Current queue depths by priority level.",
+                "response": {"queue_depths": {"critical": "int", "high": "int", "normal": "int", "low": "int"}}
+            },
+            "GET /api/health": {
+                "description": "API health check with component status.",
+                "response": {"status": "string", "version": "string", "components": {}}
+            },
+            "GET /api/agents": {
+                "description": "List registered AI agents.",
+            },
+            "GET /api/prompts": {
+                "description": "List recent prompt executions.",
+                "query_params": {"limit": {"type": "integer", "default": 50}}
+            },
+            "GET /api/prompts/{prompt_id}": {
+                "description": "Get details of a specific prompt execution."
+            },
+            "GET /api/dispatcher/stats": {
+                "description": "Dispatcher statistics."
+            }
+        },
+        "websockets": {
+            "ws /ws/mission-control": {
+                "description": "Real-time visualization feed. Sends snapshot on connect, then diffs.",
+                "auth": "Pass api_key as query parameter"
+            },
+            "ws /ws/events": {
+                "description": "General system event stream."
+            },
+            "ws /ws/prompts/{prompt_id}": {
+                "description": "Live trace stream for a specific prompt execution."
+            }
+        },
+        "notes": [
+            "All timestamps are ISO 8601 UTC.",
+            "Workers auto-detect script jobs when system_prompt contains 'execute', 'shell', 'command', etc.",
+            "Results are stored in Redis (30min TTL) and optionally MinIO (permanent).",
+            "The /api/docs endpoint provides interactive Swagger/OpenAPI documentation."
+        ]
+    }
+
+
 @app.get("/api/health")
 async def health():
     """Return API health status with system components."""
