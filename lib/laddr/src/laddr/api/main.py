@@ -1241,7 +1241,7 @@ async def get_job_result(job_id: str):
             pass
 
         # 3. Check if job exists but hasn't completed yet
-        prompt = database.get_prompt(job_id)
+        prompt = database.get_prompt_result(job_id)
         if prompt:
             status = prompt.get("status", "unknown")
             if status in ("pending", "running"):
