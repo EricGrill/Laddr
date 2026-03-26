@@ -214,6 +214,12 @@ async def execute_script(
     homebrew_paths = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin"
     if "/opt/homebrew/bin" not in path:
         proc_env["PATH"] = f"{homebrew_paths}:{path}"
+    # Disable torch.compile on CPU/Mac — inductor backend doesn't support it
+    import platform
+    if platform.system() == "Darwin" or not os.environ.get("CUDA_VISIBLE_DEVICES"):
+        proc_env.setdefault("TORCH_COMPILE", "0")
+        proc_env.setdefault("TORCHDYNAMO_DISABLE", "1")
+
     if env:
         proc_env.update(env)
 
