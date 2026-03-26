@@ -236,9 +236,12 @@ if __name__ == "__main__":
     import asyncio
 
     async def _main() -> None:
+        import os
+
         import redis.asyncio as aioredis
 
-        redis_client = aioredis.from_url("redis://localhost:6379", decode_responses=True)
+        redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
+        redis_client = aioredis.from_url(redis_url, decode_responses=True)
         worker_reg = WorkerRegistry()
         template_reg = TemplateRegistry()
         dispatcher = Dispatcher(worker_reg, template_reg, redis_client=redis_client)
