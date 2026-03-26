@@ -1,19 +1,24 @@
-"""Tests for script_executor — Tasks 1 & 2."""
+"""Tests for script_executor — Tasks 1, 2, 3 & 4."""
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import time
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
 
 from laddr.core.script_executor import (
+    ARTIFACT_THRESHOLD,
     ScriptResult,
+    WORKSPACE_ROOT,
     _parse_metrics,
     _resolve_workspace,
+    _scan_for_artifacts,
+    cleanup_workspaces,
     execute_script,
-    WORKSPACE_ROOT,
 )
 
 
@@ -232,3 +237,58 @@ class TestParseMetrics:
         (tmp_path / "metrics.json").write_text("[1, 2, 3]")
         result = _parse_metrics(tmp_path)
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# TestArtifactScanning
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestArtifactScanning:
+    async def test_detects_large_files(self, tmp_path):
+        big_file = tmp_path / "model.pt"
+        big_file.write_bytes(b"x" * (ARTIFACT_THRESHOLD + 1))
+        small_file = tmp_path / "config.json"
+        small_file.write_text('{"lr": 0.01}')
+        artifacts = _scan_for_artifacts(tmp_path)
+        assert len(artifacts) == 1
+        assert artifacts[0].name == "model.pt"
+
+    async def test_no_large_files_returns_empty(self, tmp_path):
+        (tmp_path / "small.txt").write_text("tiny")
+        artifacts = _scan_for_artifacts(tmp_path)
+        assert artifacts == []
+
+
+# ---------------------------------------------------------------------------
+# TestWorkspaceCleanup
+# ---------------------------------------------------------------------------
+
+
+class TestWorkspaceCleanup:
+    def test_removes_expired_workspaces(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("laddr.core.script_executor.WORKSPACE_ROOT", tmp_path)
+        old_ws = tmp_path / "old-experiment"
+        old_ws.mkdir()
+        (old_ws / "data.txt").write_text("old data")
+        os.utime(old_ws, (time.time() - 48 * 3600, time.time() - 48 * 3600))
+        assert cleanup_workspaces(ttl_hours=24) == 1
+        assert not old_ws.exists()
+
+    def test_skips_active_workspaces(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("laddr.core.script_executor.WORKSPACE_ROOT", tmp_path)
+        ws = tmp_path / "active-exp"
+        ws.mkdir()
+        (ws / ".active").touch()
+        os.utime(ws, (time.time() - 48 * 3600, time.time() - 48 * 3600))
+        assert cleanup_workspaces(ttl_hours=24) == 0
+        assert ws.exists()
+
+    def test_skips_recent_workspaces(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("laddr.core.script_executor.WORKSPACE_ROOT", tmp_path)
+        ws = tmp_path / "recent-exp"
+        ws.mkdir()
+        (ws / "data.txt").write_text("recent")
+        assert cleanup_workspaces(ttl_hours=24) == 0
+        assert ws.exists()

@@ -8,12 +8,16 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
+import logging
 import os
 import shutil
 import signal
+import time
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Environment variable constants
@@ -94,6 +98,79 @@ def _parse_metrics(workspace: Path) -> Optional[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Artifact scanning
+# ---------------------------------------------------------------------------
+
+
+def _scan_for_artifacts(workspace: Path) -> list[Path]:
+    """Find files in workspace exceeding ARTIFACT_THRESHOLD bytes.
+    Skips hidden files (starting with '.') and metrics.json."""
+    results = []
+    for path in workspace.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.name.startswith("."):
+            continue
+        if path.name == "metrics.json":
+            continue
+        if path.stat().st_size > ARTIFACT_THRESHOLD:
+            results.append(path)
+    return results
+
+
+async def upload_artifacts(
+    workspace: Path,
+    experiment_id: str | None,
+    storage_backend: Any | None,
+) -> list[str]:
+    """Upload large files to MinIO. Returns list of bucket/key strings."""
+    if storage_backend is None:
+        return []
+
+    large_files = _scan_for_artifacts(workspace)
+    prefix = experiment_id if experiment_id else "ephemeral"
+    uploaded = []
+
+    for file_path in large_files:
+        relative = file_path.relative_to(workspace)
+        key = f"artifacts/{prefix}/{relative}"
+        try:
+            data = file_path.read_bytes()
+            await storage_backend.put_object(bucket="laddr", key=key, data=data)
+            uploaded.append(f"laddr/{key}")
+        except Exception as exc:
+            logger.warning("Failed to upload artifact %s: %s", file_path, exc)
+
+    return uploaded
+
+
+# ---------------------------------------------------------------------------
+# Workspace cleanup
+# ---------------------------------------------------------------------------
+
+
+def cleanup_workspaces(ttl_hours: int | None = None) -> int:
+    """Remove expired workspaces without .active lockfile. Returns count removed."""
+    if not WORKSPACE_ROOT.exists():
+        return 0
+
+    ttl = ttl_hours if ttl_hours is not None else WORKSPACE_TTL_HOURS
+    cutoff = time.time() - (ttl * 3600)
+    removed = 0
+
+    for entry in WORKSPACE_ROOT.iterdir():
+        if not entry.is_dir():
+            continue
+        if (entry / ".active").exists():
+            continue
+        if entry.stat().st_mtime < cutoff:
+            shutil.rmtree(entry, ignore_errors=True)
+            removed += 1
+
+    return removed
+
+
+# ---------------------------------------------------------------------------
 # Main execution function
 # ---------------------------------------------------------------------------
 
@@ -105,6 +182,7 @@ async def execute_script(
     experiment_id: Optional[str] = None,
     timeout_seconds: Optional[float] = None,
     env: Optional[dict[str, str]] = None,
+    storage_backend: Any = None,
 ) -> ScriptResult:
     """Execute a shell command asynchronously within a managed workspace.
 
@@ -130,8 +208,6 @@ async def execute_script(
     proc_env = os.environ.copy()
     if env:
         proc_env.update(env)
-
-    import time
 
     start = time.monotonic()
     status = "success"
@@ -208,6 +284,9 @@ async def execute_script(
     # Parse metrics
     metrics = _parse_metrics(workspace)
 
+    # Upload artifacts
+    artifacts = await upload_artifacts(workspace, experiment_id, storage_backend)
+
     # Remove lockfile
     try:
         lockfile.unlink(missing_ok=True)
@@ -227,7 +306,7 @@ async def execute_script(
         stdout=stdout_str,
         stderr=stderr_str,
         metrics=metrics,
-        artifacts=[],
+        artifacts=artifacts,
         duration_seconds=duration,
         workspace_path=str(workspace),
     )
