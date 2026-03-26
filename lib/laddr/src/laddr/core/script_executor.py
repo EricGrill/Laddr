@@ -214,25 +214,48 @@ async def execute_script(
     homebrew_paths = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin"
     if "/opt/homebrew/bin" not in path:
         proc_env["PATH"] = f"{homebrew_paths}:{path}"
-    # Mac/CPU PyTorch fixes
+    # Mac/CPU PyTorch fixes — must work for ALL Python invocations (train.py, python3 -c, etc.)
     import platform
-    if platform.system() == "Darwin" or not os.environ.get("CUDA_VISIBLE_DEVICES"):
-        proc_env.setdefault("TORCH_COMPILE", "0")
-        proc_env.setdefault("TORCHDYNAMO_DISABLE", "1")
-        # Force float32 — BFloat16 not supported on CPU/MPS, causes dtype mismatch
-        proc_env.setdefault("TORCH_DTYPE", "float32")
-        proc_env.setdefault("NANOCONFIG_DTYPE", "float32")
+    is_cpu = platform.system() == "Darwin" or not os.environ.get("CUDA_VISIBLE_DEVICES")
+    if is_cpu:
+        proc_env["TORCHDYNAMO_DISABLE"] = "1"
+        proc_env["TORCH_COMPILE_DISABLE"] = "1"
+        proc_env["TORCH_DTYPE"] = "float32"
+        proc_env["NANOCONFIG_DTYPE"] = "float32"
+
+        # Write a sitecustomize.py that monkey-patches torch at import time
+        sitecustomize = workspace / "_laddr_sitecustomize.py"
+        sitecustomize.write_text(
+            "import os\n"
+            "os.environ['TORCHDYNAMO_DISABLE'] = '1'\n"
+            "try:\n"
+            "    import torch\n"
+            "    # Disable compile by replacing it with identity\n"
+            "    torch.compile = lambda f=None, *a, **kw: f if f is not None else (lambda fn: fn)\n"
+            "    # Force default dtype to float32\n"
+            "    torch.set_default_dtype(torch.float32)\n"
+            "except ImportError:\n"
+            "    pass\n"
+        )
+        # PYTHONSTARTUP runs for interactive, but -c and scripts need PYTHONPATH + sitecustomize
+        proc_env["PYTHONSTARTUP"] = str(sitecustomize)
+        # Use usercustomize via PYTHONPATH so it runs for ALL python invocations
+        proc_env.setdefault("PYTHONPATH", "")
+        proc_env["PYTHONPATH"] = str(workspace) + (":" + proc_env["PYTHONPATH"] if proc_env["PYTHONPATH"] else "")
+        # Rename to usercustomize.py — Python loads this automatically from PYTHONPATH
+        usercustomize = workspace / "usercustomize.py"
+        if not usercustomize.exists():
+            sitecustomize.rename(usercustomize)
 
     if env:
         proc_env.update(env)
 
-    # Auto-patch nanoGPT and common training scripts to use float32 on CPU/Mac
-    if platform.system() == "Darwin" or not os.environ.get("CUDA_VISIBLE_DEVICES"):
+    # Auto-patch train.py commands with explicit flags
+    if is_cpu:
         if "train.py" in command and "--dtype" not in command:
             command = command.replace("train.py", "train.py --dtype=float32")
         if "train.py" in command and "--compile" not in command:
             command = command.replace("train.py", "train.py --compile=False")
-        # Also set device to cpu if no CUDA and --device not specified
         if "train.py" in command and "--device" not in command:
             command = command.replace("train.py", "train.py --device=cpu")
 
