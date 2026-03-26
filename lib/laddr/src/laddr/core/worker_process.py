@@ -184,6 +184,8 @@ class WorkerProcess:
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, self._shutdown)
+        # Ignore SIGHUP so SSH disconnect doesn't kill the worker
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
 
         # Consumer group on worker stream
         stream_key = f"laddr:worker:{self.worker_id}"
