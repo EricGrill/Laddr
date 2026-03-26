@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useMissionControl } from "./hooks/useMissionControl";
 import { PixiCanvas } from "./pixi/PixiCanvas";
 import { TopBar } from "./ui/TopBar";
-import { MCSidebar } from "./ui/Sidebar";
+// Sidebar removed for 2D canvas view
 import { InspectorPanel } from "./ui/InspectorPanel";
 import { AlertToasts } from "./ui/AlertToasts";
 import { EventTicker } from "./ui/EventTicker";

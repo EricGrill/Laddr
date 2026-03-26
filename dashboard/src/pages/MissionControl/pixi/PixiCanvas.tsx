@@ -36,14 +36,22 @@ function packetPosition(
   index: number,
   state: string,
 ): { x: number; y: number } {
+  // Grid layout around station — max 6 columns, wrap to rows
+  const cols = 6;
+  const col = index % cols;
+  const row = Math.floor(index / cols);
+  const spacingX = 18;
+  const spacingY = 16;
+  const offsetX = (col - (cols - 1) / 2) * spacingX;
+  const offsetY = -45 - row * spacingY;
+
   if (state === 'queued' || state === 'created') {
-    const offset = (index - 2) * 20;
-    return { x: stationX + offset, y: stationY - 50 };
+    return { x: stationX + offsetX, y: stationY + offsetY };
   }
   if (state === 'processing') {
-    return { x: stationX + (index - 1) * 18, y: stationY - 35 };
+    return { x: stationX + offsetX * 0.6, y: stationY - 35 - row * 14 };
   }
-  return { x: stationX, y: stationY - 20 };
+  return { x: stationX + offsetX * 0.3, y: stationY - 25 };
 }
 
 function buildStationList(stations: Record<string, { id: string; type: string; label: string; state: string; queueDepth: number }>): StationConfig[] {
@@ -179,8 +187,10 @@ export function PixiCanvas() {
         }
       }
 
-      // Create new
+      // Create new — only for active jobs (skip completed/cancelled/failed)
+      const HIDDEN_STATES = new Set(['completed', 'cancelled', 'failed']);
       for (const j of jobs) {
+        if (HIDDEN_STATES.has(j.state)) continue;
         if (!packetContainers.has(j.id)) {
           const pc = createPacket(j.type, j.priority, j.state, j.progress ?? 0);
           packetContainers.set(j.id, pc);

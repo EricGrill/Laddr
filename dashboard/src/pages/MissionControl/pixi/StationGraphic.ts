@@ -113,7 +113,7 @@ export function createStation(config: StationConfig, onClick?: (id: string) => v
   // Badge text
   const badgeText = new Text({
     text: '',
-    style: new TextStyle({ fontSize: 9, fill: '#D9D7D1', fontFamily: 'monospace' }),
+    style: new TextStyle({ fontSize: 9, fill: '#D9D7D1', fontFamily: 'Arial, Helvetica, sans-serif' }),
   });
   badgeText.visible = false;
   container.addChild(badgeText);
@@ -124,7 +124,7 @@ export function createStation(config: StationConfig, onClick?: (id: string) => v
     style: new TextStyle({
       fontSize: 11,
       fill: '#D9D7D1',
-      fontFamily: 'monospace',
+      fontFamily: 'Arial, Helvetica, sans-serif',
       fontWeight: 'bold',
     }),
   });
