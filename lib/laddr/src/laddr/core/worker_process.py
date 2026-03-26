@@ -181,8 +181,16 @@ class WorkerProcess:
         self.max_concurrent: int = self.config.get("max_concurrent", 2)
         self.redis_url: str = self.config["server"]["redis_url"]
 
+        # MinIO/S3 storage config (optional)
+        self.minio_endpoint: str | None = self.config.get("server", {}).get("minio_endpoint")
+        self.minio_access_key: str = self.config.get("server", {}).get("minio_access_key", "minioadmin")
+        self.minio_secret_key: str = self.config.get("server", {}).get("minio_secret_key", "minioadmin123")
+        self.minio_bucket: str = self.config.get("server", {}).get("minio_bucket", "laddr")
+        self.store_results_in_minio: bool = self.config.get("server", {}).get("store_results", False)
+
         self._running: bool = False
         self._redis: Any = None
+        self._storage: Any = None
         self._models: list[dict] = []
         self._active_jobs: int = 0
         self._heartbeat_task: asyncio.Task | None = None
@@ -198,6 +206,22 @@ class WorkerProcess:
 
         self._redis = aioredis.from_url(self.redis_url, decode_responses=True)
         self._running = True
+
+        # Initialize MinIO storage if configured
+        if self.store_results_in_minio and self.minio_endpoint:
+            try:
+                from laddr.core.storage import S3Storage
+                self._storage = S3Storage(
+                    endpoint=self.minio_endpoint,
+                    access_key=self.minio_access_key,
+                    secret_key=self.minio_secret_key,
+                    secure=False,
+                )
+                await self._storage.ensure_bucket(self.minio_bucket)
+                logger.info("MinIO storage enabled: %s/%s", self.minio_endpoint, self.minio_bucket)
+            except Exception as exc:
+                logger.warning("Failed to initialize MinIO storage: %s", exc)
+                self._storage = None
 
         # Discover models
         if self.llm_endpoint:
@@ -316,6 +340,20 @@ class WorkerProcess:
                 "completed_at": time.time(),
             })
             await self._redis.set(result_key, result_payload, ex=1800)
+
+            # Store in MinIO if enabled
+            if self._storage:
+                try:
+                    minio_key = f"results/{job_id}.json"
+                    await self._storage.put_object(
+                        self.minio_bucket,
+                        minio_key,
+                        result_payload.encode("utf-8"),
+                        metadata={"content-type": "application/json", "worker": self.worker_id},
+                    )
+                    logger.info("Result stored in MinIO: %s/%s", self.minio_bucket, minio_key)
+                except Exception as exc:
+                    logger.warning("Failed to store result in MinIO: %s", exc)
 
             callback_url = job.get("callback_url")
             callback_headers = job.get("callback_headers", {})
