@@ -10,7 +10,7 @@ import { useEntityStore } from '../stores/entityStore';
 import { useUIStore } from '../stores/uiStore';
 import type { StationType, StationState, MCWorker, MCJob } from '../types';
 
-const CANVAS_W = 840;
+const CANVAS_W = 1060;
 const CANVAS_H = 780;
 const BG_COLOR = 0x1a2230;
 

@@ -30,15 +30,15 @@ export const STATION_POSITIONS: Record<
   string,
   { x: number; y: number; type: StationType; label: string }
 > = {
-  intake: { x: 100, y: 200, type: 'intake', label: 'Incoming Orders' },
-  dispatcher: { x: 300, y: 350, type: 'dispatcher', label: 'Routing Core' },
-  llm: { x: 150, y: 500, type: 'llm', label: 'Science/Research' },
-  code: { x: 450, y: 500, type: 'code', label: 'Systems Engineering' },
-  tool: { x: 100, y: 650, type: 'tool', label: 'Recon/Comms' },
-  output: { x: 550, y: 350, type: 'output', label: 'Deploy Bay' },
-  supervisor: { x: 550, y: 200, type: 'supervisor', label: 'Review/Verification' },
-  'command-oversight': { x: 700, y: 200, type: 'supervisor', label: 'Command Oversight' },
-  error: { x: 450, y: 650, type: 'error', label: 'Anomaly Containment' },
+  intake: { x: 120, y: 180, type: 'intake', label: 'Incoming Orders' },
+  dispatcher: { x: 440, y: 320, type: 'dispatcher', label: 'Routing Core' },
+  llm: { x: 220, y: 480, type: 'llm', label: 'Science/Research' },
+  code: { x: 660, y: 480, type: 'code', label: 'Systems Engineering' },
+  tool: { x: 120, y: 600, type: 'tool', label: 'Recon/Comms' },
+  output: { x: 780, y: 320, type: 'output', label: 'Deploy Bay' },
+  supervisor: { x: 660, y: 140, type: 'supervisor', label: 'Review/Verification' },
+  'command-oversight': { x: 900, y: 140, type: 'supervisor', label: 'Command Oversight' },
+  error: { x: 660, y: 620, type: 'error', label: 'Anomaly Containment' },
 };
 
 export interface StationConfig {
