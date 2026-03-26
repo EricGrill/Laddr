@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { getWebSocketBaseUrl } from "../../../lib/config";
 import type { MCCommand, MCServerEvent } from "../types";
 import { useEntityStore } from "./entityStore";
+import { useTickerStore } from "../ui/EventTicker";
 
 interface TransportState {
   isConnected: boolean;
@@ -56,6 +57,7 @@ export const useTransportStore = create<TransportState>((set, get) => {
     try {
       const data = JSON.parse(event.data) as MCServerEvent;
       useEntityStore.getState().handleEvent(data);
+      useTickerStore.getState().pushEvent(data);
     } catch {
       console.error("[MissionControl] Failed to parse WebSocket message");
     }

@@ -1,9 +1,77 @@
-import { useRef, useState, useMemo } from "react";
+import { useRef, useState, useMemo, useCallback } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html, useGLTF } from "@react-three/drei";
 import { Mesh, MeshStandardMaterial, Color } from "three";
 import type { MCStation, Vec3 } from "../types";
 import { useUIStore } from "../stores/uiStore";
+
+/* ------------------------------------------------------------------ */
+/*  QueueLine – small glowing cubes lined up behind a busy station    */
+/* ------------------------------------------------------------------ */
+
+interface QueueLineProps {
+  queueDepth: number;
+  color: string;
+}
+
+function QueueLine({ queueDepth, color }: QueueLineProps) {
+  const count = Math.min(queueDepth, 8);
+  const hasOverflow = queueDepth > 8;
+
+  // One ref per cube (max 8)
+  const cubeRefs = useRef<(Mesh | null)[]>([]);
+  const setRef = useCallback(
+    (index: number) => (el: Mesh | null) => {
+      cubeRefs.current[index] = el;
+    },
+    [],
+  );
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    for (let i = 0; i < count; i++) {
+      const mesh = cubeRefs.current[i];
+      if (!mesh) continue;
+      // gentle bob with phase offset per cube
+      mesh.position.y = 0.15 + Math.sin(t * 2 + i * 0.5) * 0.05;
+
+      // overflow indicator: last cube pulses more intensely
+      if (hasOverflow && i === count - 1) {
+        const pulse = 0.8 + Math.sin(t * 4) * 0.4;
+        (mesh.material as MeshStandardMaterial).emissiveIntensity = pulse;
+        const s = 1 + Math.sin(t * 4) * 0.15;
+        mesh.scale.set(s, s, s);
+      }
+    }
+  });
+
+  if (count === 0) return null;
+
+  return (
+    <>
+      {Array.from({ length: count }, (_, i) => {
+        const isOverflow = hasOverflow && i === count - 1;
+        const cubeSize = isOverflow ? 0.25 : 0.2;
+        return (
+          <mesh
+            key={i}
+            ref={setRef(i)}
+            position={[0, 0.15, -(i * 0.35 + 1.8)]}
+          >
+            <boxGeometry args={[cubeSize, cubeSize, cubeSize]} />
+            <meshStandardMaterial
+              color={color}
+              emissive={color}
+              emissiveIntensity={0.6}
+              transparent
+              opacity={0.7}
+            />
+          </mesh>
+        );
+      })}
+    </>
+  );
+}
 
 const STATION_COLORS: Record<string, string> = {
   intake: "#2ecc71",
@@ -258,6 +326,11 @@ export function StationMesh({ station, position }: StationMeshProps) {
             </div>
           </div>
         </Html>
+      )}
+
+      {/* Queue line – visible cubes behind station when jobs are waiting */}
+      {!isFiltered && station.queueDepth > 0 && (
+        <QueueLine queueDepth={station.queueDepth} color={color} />
       )}
     </group>
   );
