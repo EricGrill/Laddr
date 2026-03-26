@@ -254,17 +254,18 @@ class WorkerProcess:
 
                 for _stream, messages in results:
                     for msg_id, fields in messages:
-                        job_id = fields.get("job_id", "")
-                        if job_id in self._seen_ids:
-                            await self._redis.xack(stream_key, group_name, msg_id)
-                            continue
-                        self._seen_ids.add(job_id)
-
                         # Dispatcher sends {"job": json.dumps(...)},
                         # API sends {"payload": json.dumps(...), "job_id": ...}
                         raw = fields.get("payload") or fields.get("job", "{}")
                         job = json.loads(raw)
+
+                        job_id = fields.get("job_id", "") or job.get("job_id", "") or str(msg_id)
                         job.setdefault("job_id", job_id)
+
+                        if job_id in self._seen_ids:
+                            await self._redis.xack(stream_key, group_name, msg_id)
+                            continue
+                        self._seen_ids.add(job_id)
 
                         try:
                             await self._execute_job(job)
