@@ -39,6 +39,8 @@ __all__ = [
     "ArtifactStorageTool",
     # System tool factory
     "create_system_tools",
+    # Script execution tool
+    "system_exec_script",
 ]
 
 # Global registry for tool overrides
@@ -787,6 +789,28 @@ class ParallelDelegationTool:
                 "overlap": overlap
             }
         }
+
+
+async def system_exec_script(
+    command: str,
+    timeout_seconds: int = 300,
+    experiment_id: str | None = None,
+    env: dict | None = None,
+    **kwargs,
+) -> dict:
+    """Execute a shell command in the experiment workspace.
+
+    Returns stdout, stderr, exit code, and any metrics from metrics.json.
+    """
+    from laddr.core.script_executor import execute_script
+
+    result = await execute_script(
+        command=command,
+        timeout_seconds=timeout_seconds,
+        experiment_id=experiment_id,
+        env=env,
+    )
+    return result.to_dict()
 
 
 def create_system_tools(message_bus, storage_backend=None, agent=None) -> dict[str, tuple[Any, list[str]]]:

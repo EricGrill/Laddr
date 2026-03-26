@@ -1,10 +1,11 @@
-"""Tests for script_executor — Tasks 1, 2, 3 & 4."""
+"""Tests for script_executor — Tasks 1, 2, 3, 4 & 5."""
 from __future__ import annotations
 
 import json
 import os
 import shutil
 import time
+import uuid
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ from laddr.core.script_executor import (
     cleanup_workspaces,
     execute_script,
 )
+from laddr.core.system_tools import system_exec_script
 
 
 # ---------------------------------------------------------------------------
@@ -292,3 +294,25 @@ class TestWorkspaceCleanup:
         (ws / "data.txt").write_text("recent")
         assert cleanup_workspaces(ttl_hours=24) == 0
         assert ws.exists()
+
+
+# ---------------------------------------------------------------------------
+# TestSystemExecScriptTool
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestSystemExecScriptTool:
+    async def test_tool_returns_dict(self):
+        result = await system_exec_script(command="echo tool-test")
+        assert isinstance(result, dict)
+        assert result["status"] == "success"
+        assert "tool-test" in result["stdout"]
+
+    async def test_tool_passes_experiment_id(self):
+        exp_id = f"test-tool-{uuid.uuid4().hex[:8]}"
+        try:
+            result = await system_exec_script(command="echo hi", experiment_id=exp_id)
+            assert Path(result["workspace_path"]).exists()
+        finally:
+            shutil.rmtree(Path.home() / ".laddr" / "workspaces" / exp_id, ignore_errors=True)
