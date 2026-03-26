@@ -113,7 +113,7 @@ async def _execute_script_job(job: dict) -> dict:
     """Execute a task_type='script' job directly via script_executor."""
     from laddr.core.script_executor import execute_script
 
-    command = job.get("command", "")
+    command = job.get("command") or job.get("user_prompt", "")
     if not command:
         return {
             "status": "error", "exit_code": -1, "stdout": "",
@@ -315,11 +315,56 @@ class WorkerProcess:
     # Job execution
     # ------------------------------------------------------------------
 
+    def _detect_task_type(self, job: dict) -> str:
+        """Detect the actual task type from job payload.
+
+        If the job explicitly sets task_type, use it.
+        Otherwise, infer from context:
+        - If system_prompt contains 'execute' / 'shell' / 'command' / 'run' AND
+          this worker has the 'script-exec' skill, treat as a script job.
+        """
+        explicit = job.get("task_type", "")
+        if explicit:
+            return explicit
+
+        has_script_skill = "script-exec" in self.config.get("skills", [])
+        if not has_script_skill:
+            return "llm"
+
+        system_prompt = (job.get("system_prompt") or "").lower()
+        user_prompt = (job.get("user_prompt") or "").lower()
+        script_signals = ("execute", "shell", "command", "run script", "bash", "sh -c")
+
+        if any(s in system_prompt for s in script_signals):
+            return "script"
+        # Also detect if user_prompt starts with common shell patterns
+        stripped = user_prompt.strip()
+        if stripped and (
+            stripped.startswith("echo ") or
+            stripped.startswith("cd ") or
+            stripped.startswith("ls ") or
+            stripped.startswith("python") or
+            stripped.startswith("pip ") or
+            stripped.startswith("npm ") or
+            stripped.startswith("git ") or
+            stripped.startswith("curl ") or
+            stripped.startswith("wget ") or
+            stripped.startswith("mkdir ") or
+            stripped.startswith("cat ") or
+            stripped.startswith("./") or
+            stripped.startswith("bash ") or
+            stripped.startswith("sh ")
+        ):
+            return "script"
+
+        return "llm"
+
     async def _execute_job(self, job: dict):
         """Dispatch a job to the appropriate executor based on task_type."""
         job_id = job.get("job_id", "unknown")
-        task_type = job.get("task_type", "llm")
+        task_type = self._detect_task_type(job)
 
+        logger.info("Job %s detected as task_type=%s", job_id, task_type)
         self._active_jobs += 1
         try:
             if task_type == "script":
