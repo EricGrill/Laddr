@@ -13,19 +13,25 @@ export function SceneRoot() {
     <Canvas
       camera={{ position: [0, 18, 14], fov: 50 }}
       gl={{ antialias: true, alpha: false }}
-      style={{ background: "#0a0e1a" }}
+      style={{ background: "#0c1225" }}
     >
-      {/* Fog for depth */}
-      <fog attach="fog" args={["#0a0e1a", 20, 50]} />
+      {/* Fog — pushed back so scene is more visible */}
+      <fog attach="fog" args={["#0c1225", 35, 60]} />
 
-      {/* Lighting — richer setup */}
-      <ambientLight intensity={0.1} color="#1a2a4a" />
-      <directionalLight position={[10, 20, 10]} intensity={0.3} color="#ffffff" />
-      <pointLight position={[0, 10, 0]} intensity={0.8} color="#3498db" distance={35} />
-      <pointLight position={[-12, 4, 0]} intensity={0.4} color="#2ecc71" distance={15} />
-      <pointLight position={[12, 4, 0]} intensity={0.4} color="#1abc9c" distance={15} />
-      <pointLight position={[0, 4, -8]} intensity={0.3} color="#f1c40f" distance={12} />
-      <pointLight position={[0, 4, 8]} intensity={0.3} color="#c0392b" distance={12} />
+      {/* Lighting — much brighter */}
+      <ambientLight intensity={0.4} color="#4a6fa5" />
+      <directionalLight position={[10, 25, 10]} intensity={0.8} color="#ffffff" />
+      <hemisphereLight args={["#4a6fa5", "#1a1a2e", 0.3]} />
+
+      {/* Station zone lights — brighter and wider */}
+      <pointLight position={[0, 12, 0]} intensity={1.5} color="#3498db" distance={40} />
+      <pointLight position={[-12, 6, 0]} intensity={1.0} color="#2ecc71" distance={20} />
+      <pointLight position={[12, 6, 0]} intensity={1.0} color="#1abc9c" distance={20} />
+      <pointLight position={[0, 6, -8]} intensity={0.8} color="#f1c40f" distance={16} />
+      <pointLight position={[0, 6, 8]} intensity={0.8} color="#c0392b" distance={16} />
+      {/* Fill lights for the middle zone */}
+      <pointLight position={[3, 6, 0]} intensity={0.6} color="#9b59b6" distance={18} />
+      <pointLight position={[-3, 6, 0]} intensity={0.6} color="#e67e22" distance={18} />
 
       {/* Environment */}
       <ShipEnvironment />
@@ -42,12 +48,12 @@ export function SceneRoot() {
       {/* Effects */}
       <EffectsLayer />
 
-      {/* Post-processing */}
+      {/* Post-processing — slightly toned down bloom so it doesn't wash out */}
       <EffectComposer>
         <Bloom
-          luminanceThreshold={0.4}
+          luminanceThreshold={0.5}
           luminanceSmoothing={0.9}
-          intensity={1.2}
+          intensity={0.8}
         />
       </EffectComposer>
     </Canvas>

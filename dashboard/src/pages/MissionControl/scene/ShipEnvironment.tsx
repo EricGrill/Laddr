@@ -10,14 +10,14 @@ function Floor() {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
       <planeGeometry args={[32, 20]} />
-      <meshStandardMaterial color="#0d1117" metalness={0.8} roughness={0.4} />
+      <meshStandardMaterial color="#1a2030" metalness={0.6} roughness={0.5} />
     </mesh>
   );
 }
 
 function GridLines() {
   return (
-    <gridHelper args={[32, 32, "#1a2744", "#0f1a2e"]} position={[0, 0.01, 0]} />
+    <gridHelper args={[32, 32, "#2a3a5c", "#1a2a4a"]} position={[0, 0.01, 0]} />
   );
 }
 
@@ -26,19 +26,19 @@ function Walls() {
     <group>
       <mesh position={[0, 3, -10]}>
         <boxGeometry args={[32, 6, 0.2]} />
-        <meshStandardMaterial color="#0a0f1a" metalness={0.9} roughness={0.3} />
+        <meshStandardMaterial color="#151d2e" metalness={0.7} roughness={0.4} />
       </mesh>
       <mesh position={[0, 3, 10]}>
         <boxGeometry args={[32, 6, 0.2]} />
-        <meshStandardMaterial color="#0a0f1a" metalness={0.9} roughness={0.3} />
+        <meshStandardMaterial color="#151d2e" metalness={0.7} roughness={0.4} />
       </mesh>
       <mesh position={[-16, 3, 0]}>
         <boxGeometry args={[0.2, 6, 20]} />
-        <meshStandardMaterial color="#0a0f1a" metalness={0.9} roughness={0.3} />
+        <meshStandardMaterial color="#151d2e" metalness={0.7} roughness={0.4} />
       </mesh>
       <mesh position={[16, 3, 0]}>
         <boxGeometry args={[0.2, 6, 20]} />
-        <meshStandardMaterial color="#0a0f1a" metalness={0.9} roughness={0.3} />
+        <meshStandardMaterial color="#151d2e" metalness={0.7} roughness={0.4} />
       </mesh>
     </group>
   );
