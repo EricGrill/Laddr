@@ -181,8 +181,12 @@ class WorkerProcess:
         self.worker_id: str = self.config["worker_id"]
         self.node: str = self.config.get("node", self.worker_id)
         self.llm_endpoint: str | None = self.config.get("llm", {}).get("endpoint")
+        self.llm_api_key: str = self.config.get("llm", {}).get("api_key", "lm-studio")
         self.max_concurrent: int = self.config.get("max_concurrent", 2)
         self.redis_url: str = self.config["server"]["redis_url"]
+
+        # Cloud LLM providers (optional, used as fallback or when job requires specific models)
+        self.cloud_providers: list[dict] = self.config.get("cloud_providers", [])
 
         # MinIO/S3 storage config (optional)
         self.minio_endpoint: str | None = self.config.get("server", {}).get("minio_endpoint")
@@ -434,8 +438,29 @@ class WorkerProcess:
         resolved = resolve_requirements(raw_reqs, registry)
         requirements = resolved.get("requirements", {})
 
-        # Pre-flight: verify a suitable model is loaded
+        # Pre-flight: verify a suitable model is loaded (local first)
         model = select_model_for_job(self._models, requirements)
+        cloud_provider = None
+
+        # If no local model, try cloud providers
+        if model is None and self.cloud_providers:
+            for provider in self.cloud_providers:
+                provider_models = provider.get("models", [])
+                cloud_match = select_model_for_job(provider_models, requirements)
+                if cloud_match:
+                    model = cloud_match
+                    cloud_provider = provider
+                    break
+
+            # If still no match but we have cloud providers, use first cloud provider's first model
+            if model is None:
+                for provider in self.cloud_providers:
+                    provider_models = provider.get("models", [])
+                    if provider_models:
+                        model = provider_models[0]
+                        cloud_provider = provider
+                        break
+
         if model is None:
             # Re-enqueue to priority stream so dispatcher can try another worker
             priority = job.get("priority", "normal")
@@ -450,12 +475,20 @@ class WorkerProcess:
         # Build agent config
         config = build_agent_config(job, self.worker_id)
 
-        # LLM backend pointing at LM Studio
-        llm = OpenAILLM(
-            api_key="lm-studio",
-            model=model["id"],
-            base_url=self.llm_endpoint,
-        )
+        # Select LLM backend: cloud provider or local LM Studio
+        if cloud_provider:
+            llm = OpenAILLM(
+                api_key=cloud_provider["api_key"],
+                model=model["id"],
+                base_url=cloud_provider["endpoint"],
+            )
+            logger.info("Job %s using cloud provider %s model %s", job_id, cloud_provider.get("name", "cloud"), model["id"])
+        else:
+            llm = OpenAILLM(
+                api_key=self.llm_api_key,
+                model=model["id"],
+                base_url=self.llm_endpoint,
+            )
 
         # Minimal env config (agent itself doesn't need Redis/Postgres)
         env_config = LaddrConfig(
@@ -544,10 +577,20 @@ class WorkerProcess:
     # ------------------------------------------------------------------
 
     def _build_capabilities(self) -> dict:
+        # Merge local models + cloud provider models
+        all_models = list(self._models)
+        for provider in self.cloud_providers:
+            for m in provider.get("models", []):
+                # Tag cloud models with their provider
+                model_entry = dict(m)
+                model_entry.setdefault("provider", provider.get("name", "cloud"))
+                model_entry.setdefault("loaded", True)
+                all_models.append(model_entry)
+
         return {
             "worker_id": self.worker_id,
             "node": self.node,
-            "models": self._models,
+            "models": all_models,
             "mcps": self.config.get("mcps", []),
             "skills": self.config.get("skills", []),
             "max_concurrent": self.max_concurrent,
