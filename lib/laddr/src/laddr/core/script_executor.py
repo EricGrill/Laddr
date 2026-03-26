@@ -204,8 +204,12 @@ async def execute_script(
     lockfile = workspace / ".active"
     lockfile.write_text(str(os.getpid()))
 
-    # Build environment
+    # Build environment — ensure modern Python and homebrew tools are on PATH
     proc_env = os.environ.copy()
+    path = proc_env.get("PATH", "/usr/bin:/bin")
+    homebrew_paths = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin"
+    if "/opt/homebrew/bin" not in path:
+        proc_env["PATH"] = f"{homebrew_paths}:{path}"
     if env:
         proc_env.update(env)
 
