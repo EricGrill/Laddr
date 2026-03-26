@@ -1,6 +1,6 @@
-import Cookies from 'js-cookie';
+import Cookies from "js-cookie";
 
-const AUTH_COOKIE = 'laddr_auth';
+const AUTH_COOKIE = "laddr_auth";
 
 export interface AuthUser {
   username: string;
@@ -8,10 +8,9 @@ export interface AuthUser {
 }
 
 export const login = (username: string, password: string): boolean => {
-  // Parse DASH_USERS from environment (format: "user1:pass1,user2:pass2")
-  const dashUsers = import.meta.env.VITE_DASH_USERS || 'admin:admin';
-  const userPairs = dashUsers.split(',').map((pair: string) => {
-    const [u, p] = pair.split(':');
+  const dashUsers = import.meta.env.VITE_DASH_USERS || "admin:admin";
+  const userPairs = dashUsers.split(",").map((pair: string) => {
+    const [u, p] = pair.split(":");
     return { username: u?.trim(), password: p?.trim() };
   });
 
@@ -21,9 +20,9 @@ export const login = (username: string, password: string): boolean => {
 
   if (validUser) {
     const token = btoa(`${username}:${Date.now()}`);
-    Cookies.set(AUTH_COOKIE, token, { expires: 7 }); // 7 days
-    localStorage.setItem('auth_token', token);
-    localStorage.setItem('auth_user', username);
+    Cookies.set(AUTH_COOKIE, token, { expires: 7, sameSite: "lax", secure: false });
+    localStorage.setItem("auth_token", token);
+    localStorage.setItem("auth_user", username);
     return true;
   }
 
@@ -32,17 +31,17 @@ export const login = (username: string, password: string): boolean => {
 
 export const logout = () => {
   Cookies.remove(AUTH_COOKIE);
-  localStorage.removeItem('auth_token');
-  localStorage.removeItem('auth_user');
+  localStorage.removeItem("auth_token");
+  localStorage.removeItem("auth_user");
 };
 
 export const isAuthenticated = (): boolean => {
-  return !!Cookies.get(AUTH_COOKIE);
+  return !!Cookies.get(AUTH_COOKIE) || !!localStorage.getItem("auth_token");
 };
 
 export const getCurrentUser = (): AuthUser | null => {
-  const token = Cookies.get(AUTH_COOKIE);
-  const username = localStorage.getItem('auth_user');
+  const token = Cookies.get(AUTH_COOKIE) || localStorage.getItem("auth_token");
+  const username = localStorage.getItem("auth_user");
 
   if (token && username) {
     return {
