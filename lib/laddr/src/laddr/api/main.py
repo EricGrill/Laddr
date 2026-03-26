@@ -102,6 +102,36 @@ class AgentInfo(BaseModel):
     last_executed: str | None = None
 
 
+# Capability routing request models
+from pydantic import Field as PydanticField
+
+
+class SubmitCapabilityJobRequest(BaseModel):
+    system_prompt: str
+    user_prompt: str = ""
+    inputs: dict = PydanticField(default_factory=dict)
+    requirements: dict = PydanticField(default_factory=dict)
+    priority: str = "normal"
+    timeout_seconds: int = 300
+    max_iterations: int = 5
+    max_tool_calls: int = 20
+    callback_url: str | None = None
+    callback_headers: dict = PydanticField(default_factory=dict)
+
+
+class JobTemplateRequest(BaseModel):
+    name: str
+    description: str = ""
+    requirements: dict = PydanticField(default_factory=dict)
+    defaults: dict = PydanticField(default_factory=dict)
+
+
+class ModelAliasRequest(BaseModel):
+    canonical: str
+    aliases: dict = PydanticField(default_factory=dict)
+    family: str = ""
+
+
 # Global services
 config: LaddrConfig
 factory: BackendFactory
@@ -2147,6 +2177,217 @@ async def cancel_prompt(prompt_id: str, _: None = require_api_key):
         except Exception as e:
             logger.exception("Failed to cancel prompt")
             raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Capability routing endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/api/jobs/capability", dependencies=[require_api_key])
+async def submit_capability_job(request: SubmitCapabilityJobRequest):
+    """Submit a job with capability-based routing to the priority stream."""
+    from laddr.core.message_bus import priority_stream_key, PRIORITY_LEVELS
+
+    job_id = str(uuid.uuid4())
+    created_at = datetime.utcnow().isoformat()
+
+    job_payload = {
+        "job_id": job_id,
+        "system_prompt": request.system_prompt,
+        "user_prompt": request.user_prompt,
+        "inputs": json.dumps(request.inputs),
+        "requirements": json.dumps(request.requirements),
+        "priority": request.priority,
+        "timeout_seconds": str(request.timeout_seconds),
+        "max_iterations": str(request.max_iterations),
+        "max_tool_calls": str(request.max_tool_calls),
+        "created_at": created_at,
+    }
+    if request.callback_url:
+        job_payload["callback_url"] = request.callback_url
+        job_payload["callback_headers"] = json.dumps(request.callback_headers)
+
+    priority = request.priority if request.priority in PRIORITY_LEVELS else "normal"
+    stream_key = priority_stream_key(priority)
+
+    try:
+        redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
+        await redis_client.xadd(stream_key, job_payload)
+    except AttributeError:
+        # message_bus is not Redis-backed; log and continue
+        logger.warning("message_bus does not expose a Redis client; job not enqueued to stream")
+
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "priority": priority,
+        "stream": stream_key,
+        "created_at": created_at,
+    }
+
+
+@app.get("/api/workers", dependencies=[require_api_key])
+async def list_workers_capability():
+    """List registered workers from Redis."""
+    try:
+        redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
+        raw = await redis_client.hgetall("laddr:workers")
+        workers = {}
+        for k, v in raw.items():
+            key = k.decode() if isinstance(k, bytes) else k
+            val = v.decode() if isinstance(v, bytes) else v
+            try:
+                workers[key] = json.loads(val)
+            except Exception:
+                workers[key] = val
+        return {"workers": workers}
+    except AttributeError:
+        return {"workers": {}}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/workers/{worker_id}", dependencies=[require_api_key])
+async def get_worker_capability(worker_id: str):
+    """Get a single registered worker by ID."""
+    try:
+        redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
+        raw = await redis_client.hget("laddr:workers", worker_id)
+        if raw is None:
+            raise HTTPException(status_code=404, detail=f"Worker '{worker_id}' not found")
+        val = raw.decode() if isinstance(raw, bytes) else raw
+        return json.loads(val)
+    except HTTPException:
+        raise
+    except AttributeError:
+        raise HTTPException(status_code=503, detail="Redis not available")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/templates", dependencies=[require_api_key])
+async def create_template(request: JobTemplateRequest):
+    """Store a job template in Redis."""
+    template = {
+        "name": request.name,
+        "description": request.description,
+        "requirements": request.requirements,
+        "defaults": request.defaults,
+    }
+    try:
+        redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
+        await redis_client.hset("laddr:templates", request.name, json.dumps(template))
+    except AttributeError:
+        logger.warning("message_bus does not expose a Redis client; template not persisted")
+
+    return {"ok": True, "name": request.name}
+
+
+@app.get("/api/templates", dependencies=[require_api_key])
+async def list_templates():
+    """List all job templates from Redis."""
+    try:
+        redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
+        raw = await redis_client.hgetall("laddr:templates")
+        templates = []
+        for v in raw.values():
+            val = v.decode() if isinstance(v, bytes) else v
+            try:
+                templates.append(json.loads(val))
+            except Exception:
+                pass
+        return {"templates": templates}
+    except AttributeError:
+        return {"templates": []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/queue", dependencies=[require_api_key])
+async def get_queue_depths():
+    """Show queue depths for each priority stream."""
+    from laddr.core.message_bus import PRIORITY_LEVELS, priority_stream_key
+
+    depths = {}
+    try:
+        redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
+        for level in PRIORITY_LEVELS:
+            key = priority_stream_key(level)
+            try:
+                length = await redis_client.xlen(key)
+                depths[level] = length
+            except Exception:
+                depths[level] = 0
+    except AttributeError:
+        for level in PRIORITY_LEVELS:
+            depths[level] = 0
+
+    return {"queue_depths": depths}
+
+
+@app.get("/api/dispatcher/stats", dependencies=[require_api_key])
+async def get_dispatcher_stats():
+    """Return dispatcher statistics (queue depths + stub metadata)."""
+    from laddr.core.message_bus import PRIORITY_LEVELS, priority_stream_key
+
+    depths = {}
+    total = 0
+    try:
+        redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
+        for level in PRIORITY_LEVELS:
+            key = priority_stream_key(level)
+            try:
+                length = await redis_client.xlen(key)
+                depths[level] = length
+                total += length
+            except Exception:
+                depths[level] = 0
+    except AttributeError:
+        for level in PRIORITY_LEVELS:
+            depths[level] = 0
+
+    return {
+        "queue_depths": depths,
+        "total_pending": total,
+        "dispatcher": "capability-router",
+    }
+
+
+@app.post("/api/models/aliases", dependencies=[require_api_key])
+async def create_model_alias(request: ModelAliasRequest):
+    """Store a model alias in Redis."""
+    alias = {
+        "canonical": request.canonical,
+        "aliases": request.aliases,
+        "family": request.family,
+    }
+    try:
+        redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
+        await redis_client.hset("laddr:model_aliases", request.canonical, json.dumps(alias))
+    except AttributeError:
+        logger.warning("message_bus does not expose a Redis client; model alias not persisted")
+
+    return {"ok": True, "canonical": request.canonical}
+
+
+@app.get("/api/models/aliases", dependencies=[require_api_key])
+async def list_model_aliases():
+    """List all model aliases from Redis."""
+    try:
+        redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
+        raw = await redis_client.hgetall("laddr:model_aliases")
+        aliases = []
+        for v in raw.values():
+            val = v.decode() if isinstance(v, bytes) else v
+            try:
+                aliases.append(json.loads(val))
+            except Exception:
+                pass
+        return {"aliases": aliases}
+    except AttributeError:
+        return {"aliases": []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
