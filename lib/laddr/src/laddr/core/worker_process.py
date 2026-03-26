@@ -438,12 +438,12 @@ class WorkerProcess:
         resolved = resolve_requirements(raw_reqs, registry)
         requirements = resolved.get("requirements", {})
 
-        # Pre-flight: verify a suitable model is loaded (local first)
-        model = select_model_for_job(self._models, requirements)
+        # Pre-flight: try cloud providers first (use-it-or-lose-it credits), then local
+        model = None
         cloud_provider = None
 
-        # If no local model, try cloud providers
-        if model is None and self.cloud_providers:
+        # Cloud providers first (in config order — put Venice first to burn daily credits)
+        if self.cloud_providers:
             for provider in self.cloud_providers:
                 provider_models = provider.get("models", [])
                 cloud_match = select_model_for_job(provider_models, requirements)
@@ -460,6 +460,10 @@ class WorkerProcess:
                         model = provider_models[0]
                         cloud_provider = provider
                         break
+
+        # Fall back to local LM Studio if no cloud match
+        if model is None:
+            model = select_model_for_job(self._models, requirements)
 
         if model is None:
             # Re-enqueue to priority stream so dispatcher can try another worker
