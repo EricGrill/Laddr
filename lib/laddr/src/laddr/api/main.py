@@ -2380,6 +2380,20 @@ async def cancel_prompt(prompt_id: str, _: None = require_api_key):
             raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/prompts/{prompt_id}/complete")
+async def complete_prompt(prompt_id: str, request: Request):
+    """Mark a prompt execution as completed with results. Called by workers."""
+    try:
+        body = await request.json()
+        status = body.get("status", "completed")
+        outputs = body.get("outputs", {})
+        database.save_prompt_result(prompt_id, outputs=outputs, status=status)
+        return {"ok": True, "prompt_id": prompt_id, "status": status}
+    except Exception as e:
+        logger.warning("Failed to complete prompt %s: %s", prompt_id, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ---------------------------------------------------------------------------
 # Capability routing endpoints
 # ---------------------------------------------------------------------------
@@ -2399,9 +2413,9 @@ async def submit_capability_job(request: SubmitCapabilityJobRequest):
         "inputs": json.dumps(request.inputs),
         "requirements": json.dumps(request.requirements),
         "priority": request.priority,
-        "timeout_seconds": str(request.timeout_seconds),
-        "max_iterations": str(request.max_iterations),
-        "max_tool_calls": str(request.max_tool_calls),
+        "timeout_seconds": request.timeout_seconds,
+        "max_iterations": request.max_iterations,
+        "max_tool_calls": request.max_tool_calls,
         "created_at": created_at,
     }
     if request.callback_url:
@@ -2411,12 +2425,21 @@ async def submit_capability_job(request: SubmitCapabilityJobRequest):
     priority = request.priority if request.priority in PRIORITY_LEVELS else "normal"
     stream_key = priority_stream_key(priority)
 
-    # Write as {"job_id": ..., "job": json.dumps(...)} to match dispatcher's read format
+    # Record in database so job appears in /api/prompts and Mission Control
+    try:
+        database.create_prompt(
+            prompt_id=job_id,
+            prompt_name=request.system_prompt[:80] or "capability-job",
+            inputs=request.inputs,
+        )
+    except Exception as exc:
+        logger.warning("Failed to create prompt execution record: %s", exc)
+
+    # Write to Redis priority stream for dispatcher
     try:
         redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
         await redis_client.xadd(stream_key, {"job_id": job_id, "job": json.dumps(job_payload)})
     except AttributeError:
-        # message_bus is not Redis-backed; log and continue
         logger.warning("message_bus does not expose a Redis client; job not enqueued to stream")
 
     return {
@@ -2454,7 +2477,17 @@ async def submit_script_job(request: SubmitScriptJobRequest):
     priority = request.priority if request.priority in PRIORITY_LEVELS else "normal"
     stream_key = priority_stream_key(priority)
 
-    # Write as {"job_id": ..., "job": json.dumps(...)} to match dispatcher's read format
+    # Record in database
+    try:
+        database.create_prompt(
+            prompt_id=job_id,
+            prompt_name=f"script: {request.command[:60]}",
+            inputs={"command": request.command, "task_type": "script"},
+        )
+    except Exception as exc:
+        logger.warning("Failed to create prompt execution record: %s", exc)
+
+    # Write to Redis priority stream for dispatcher
     try:
         redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
         await redis_client.xadd(stream_key, {"job_id": job_id, "job": json.dumps(job_payload)})

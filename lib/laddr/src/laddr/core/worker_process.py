@@ -407,6 +407,21 @@ class WorkerProcess:
                 except Exception as exc:
                     logger.warning("Failed to store result in MinIO: %s", exc)
 
+            # Update database record so job shows as completed in API/Mission Control
+            api_url = self.config.get("server", {}).get("api_url")
+            if api_url:
+                try:
+                    import httpx
+                    async with httpx.AsyncClient(timeout=5) as client:
+                        status = "completed" if (isinstance(result, dict) and result.get("status") != "error") else "failed"
+                        await client.post(
+                            f"{api_url}/api/prompts/{job_id}/complete",
+                            json={"status": status, "outputs": result},
+                            headers={"X-API-Key": "internal"},
+                        )
+                except Exception as exc:
+                    logger.debug("Could not update prompt status via API: %s", exc)
+
             callback_url = job.get("callback_url")
             callback_headers = job.get("callback_headers", {})
             if callback_url:
