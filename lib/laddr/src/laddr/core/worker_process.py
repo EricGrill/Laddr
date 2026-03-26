@@ -175,7 +175,7 @@ class WorkerProcess:
         # Register capabilities in Redis hash
         capabilities = self._build_capabilities()
         await self._redis.hset(
-            "laddr:workers",
+            "laddr:workers:registry",
             self.worker_id,
             json.dumps(capabilities),
         )
@@ -382,7 +382,7 @@ class WorkerProcess:
 
                 capabilities = self._build_capabilities()
                 await self._redis.hset(
-                    "laddr:workers",
+                    "laddr:workers:registry",
                     self.worker_id,
                     json.dumps(capabilities),
                 )
@@ -415,7 +415,7 @@ class WorkerProcess:
     async def _deregister(self):
         """Remove worker from registry and active counter."""
         try:
-            await self._redis.hdel("laddr:workers", self.worker_id)
+            await self._redis.hdel("laddr:workers:registry", self.worker_id)
             await self._redis.delete(f"laddr:active:{self.worker_id}")
         except Exception:
             logger.exception("Deregister error")
