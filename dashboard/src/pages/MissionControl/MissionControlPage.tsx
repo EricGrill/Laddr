@@ -74,7 +74,7 @@ export default function MissionControlPage() {
     >
       <TopBar />
       <div className="flex flex-1 overflow-hidden">
-        {!fullscreen && <MCSidebar />}
+        {/* Sidebar removed — the 2D canvas fills the viewport. Use inspector panel (click entities) instead. */}
         <div className="flex-1 relative">
           <PixiCanvas />
           <AlertToasts />
