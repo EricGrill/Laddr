@@ -40,6 +40,7 @@ from laddr.core import (
 )
 from laddr.core.langfuse_tracer import get_langfuse_client
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -1207,6 +1208,61 @@ async def get_resolved_response(task_id: str, _: None = require_api_key):
         raise
     except Exception as e:
         logger.exception("Failed to resolve response")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/jobs/{job_id}/result", dependencies=[require_api_key])
+async def get_job_result(job_id: str):
+    """Poll for a job result.
+
+    Workers store results at ``laddr:results:{job_id}`` in Redis (30 min TTL)
+    and optionally in MinIO at ``results/{job_id}.json``.
+
+    Returns 200 with the result if ready, 202 if still pending, 404 if expired.
+    Agents should poll this endpoint until they get a 200.
+    """
+    try:
+        # 1. Try Redis (fast, 30min TTL)
+        if hasattr(message_bus, "_get_client"):
+            client = await message_bus._get_client()  # type: ignore[attr-defined]
+            raw = await client.get(f"laddr:results:{job_id}")
+            if raw:
+                return json.loads(raw)
+
+        # 2. Try MinIO (permanent storage)
+        try:
+            storage = factory.create_storage_backend()
+            minio_key = f"results/{job_id}.json"
+            bucket = config.storage_bucket or config.minio_bucket or "laddr"
+            if await storage.object_exists(bucket, minio_key):
+                blob = await storage.get_object(bucket, minio_key)
+                return json.loads(blob)
+        except Exception:
+            pass
+
+        # 3. Check if job exists but hasn't completed yet
+        prompt = database.get_prompt(job_id)
+        if prompt:
+            status = prompt.get("status", "unknown")
+            if status in ("pending", "running"):
+                return JSONResponse(
+                    status_code=202,
+                    content={"job_id": job_id, "status": status, "message": "Job is still running"}
+                )
+            if status == "failed":
+                return {
+                    "job_id": job_id,
+                    "status": "failed",
+                    "error": prompt.get("error") or prompt.get("outputs", {}).get("error", "Unknown error"),
+                }
+
+        # Not found anywhere
+        raise HTTPException(status_code=404, detail="Result not found — job may have expired or never existed")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to get job result")
         raise HTTPException(status_code=500, detail=str(e))
 
 
