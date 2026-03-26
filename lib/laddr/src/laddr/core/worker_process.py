@@ -47,7 +47,14 @@ def select_model_for_job(
     if not available_models:
         return None
 
-    candidates = list(available_models)
+    # Exclude embedding models — they can't do chat/completion
+    EMBEDDING_PATTERNS = ("embed", "embedding", "nomic-embed", "text-embedding")
+    candidates = [
+        m for m in available_models
+        if not any(p in m.get("id", "").lower() for p in EMBEDDING_PATTERNS)
+    ]
+    if not candidates:
+        candidates = list(available_models)  # fallback if ALL models are embeddings
 
     # Filter by explicit model list
     model_ids = requirements.get("models")
