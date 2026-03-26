@@ -197,6 +197,10 @@ async def execute_script(
     Returns:
         ScriptResult with execution details.
     """
+    # Ensure timeout is a number (callers may pass string from JSON)
+    if timeout_seconds is not None:
+        timeout_seconds = float(timeout_seconds)
+
     workspace, is_ephemeral = _resolve_workspace(working_directory, experiment_id)
     workspace.mkdir(parents=True, exist_ok=True)
 
