@@ -312,8 +312,9 @@ class WorkerProcess:
                 instructions=config["instructions"],
             )
 
-            # Run agent
-            result = await agent.autonomous_run(config["instructions"])
+            # Run agent — autonomous_run expects a dict with 'query' key
+            task_dict = {"query": config["instructions"]}
+            result = await agent.autonomous_run(task_dict)
 
             # Persist result to Redis with 30min TTL
             result_key = f"laddr:results:{job_id}"
