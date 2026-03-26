@@ -31,6 +31,21 @@ except ImportError:  # optional dependency
     AIOKafkaConsumer = None  # type: ignore
 
 
+PRIORITY_LEVELS: tuple[str, ...] = ("critical", "high", "normal", "low")
+
+
+def priority_stream_key(priority: str) -> str:
+    """Return the Redis stream key for a given priority level."""
+    if priority not in PRIORITY_LEVELS:
+        priority = "normal"
+    return f"laddr:jobs:pending:{priority}"
+
+
+def worker_stream_key(worker_id: str) -> str:
+    """Return the Redis stream key for a specific worker."""
+    return f"laddr:worker:{worker_id}"
+
+
 @dataclass
 class TaskMessage:
     """Message sent to an agent's task queue."""
