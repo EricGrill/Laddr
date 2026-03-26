@@ -205,6 +205,21 @@ export function PixiCanvas() {
 
       containerRef.current!.appendChild(app.canvas);
 
+      // Scale the stage so the scene fills the viewport
+      function fitStage() {
+        const w = app.screen.width;
+        const h = app.screen.height;
+        const scaleX = w / CANVAS_W;
+        const scaleY = h / CANVAS_H;
+        const scale = Math.min(scaleX, scaleY);
+        app.stage.scale.set(scale);
+        // Center the scene
+        app.stage.x = (w - CANVAS_W * scale) / 2;
+        app.stage.y = (h - CANVAS_H * scale) / 2;
+      }
+      fitStage();
+      app.renderer.on('resize', fitStage);
+
       // Build scene
       const environmentLayer = createEnvironment(CANVAS_W, CANVAS_H);
       app.stage.addChild(environmentLayer);
