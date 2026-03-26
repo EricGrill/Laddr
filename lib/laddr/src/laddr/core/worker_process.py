@@ -102,6 +102,33 @@ def load_worker_config(config_path: str) -> dict:
         return yaml.safe_load(fh) or {}
 
 
+async def _execute_script_job(job: dict) -> dict:
+    """Execute a task_type='script' job directly via script_executor."""
+    from laddr.core.script_executor import execute_script
+
+    command = job.get("command", "")
+    if not command:
+        return {
+            "status": "error", "exit_code": -1, "stdout": "",
+            "stderr": "No command provided in script job",
+            "metrics": None, "artifacts": [], "duration_seconds": 0.0,
+            "workspace_path": "",
+        }
+
+    result = await execute_script(
+        command=command,
+        timeout_seconds=job.get("timeout_seconds", 300),
+        experiment_id=job.get("experiment_id"),
+        env=job.get("env"),
+    )
+    return result.to_dict()
+
+
+def _should_register_exec_tool(config: dict) -> bool:
+    """Check if this worker config should register the system_exec_script tool."""
+    return "script-exec" in config.get("skills", [])
+
+
 # ---------------------------------------------------------------------------
 # Part B: Async process lifecycle
 # ---------------------------------------------------------------------------
@@ -254,7 +281,48 @@ class WorkerProcess:
     # ------------------------------------------------------------------
 
     async def _execute_job(self, job: dict):
-        """Execute a single job by building an ephemeral agent."""
+        """Dispatch a job to the appropriate executor based on task_type."""
+        job_id = job.get("job_id", "unknown")
+        task_type = job.get("task_type", "llm")
+
+        self._active_jobs += 1
+        try:
+            if task_type == "script":
+                result = await _execute_script_job(job)
+            else:
+                result = await self._execute_llm_job(job)
+                if result is None:
+                    # Re-enqueued; nothing more to do
+                    return
+
+            # Shared bookkeeping: persist result, fire callback
+            result_key = f"laddr:results:{job_id}"
+            result_payload = json.dumps({
+                "job_id": job_id,
+                "worker_id": self.worker_id,
+                "task_type": task_type,
+                "result": result,
+                "completed_at": time.time(),
+            })
+            await self._redis.set(result_key, result_payload, ex=1800)
+
+            callback_url = job.get("callback_url")
+            callback_headers = job.get("callback_headers", {})
+            if callback_url:
+                await self._fire_callback(callback_url, callback_headers, result_payload)
+
+            logger.info("Job %s (%s) completed", job_id, task_type)
+        finally:
+            self._active_jobs -= 1
+            counter_key = f"laddr:active:{self.worker_id}"
+            await self._redis.decr(counter_key)
+
+    async def _execute_llm_job(self, job: dict) -> dict | None:
+        """Execute a task_type='llm' job by building an ephemeral agent.
+
+        Returns the result dict, or None if the job was re-enqueued because no
+        suitable model was available.
+        """
         from laddr.core.config import AgentConfig, LaddrConfig
         from laddr.core.agent_runtime import Agent as CoreAgent
         from laddr.core.llm import OpenAILLM
@@ -280,69 +348,46 @@ class WorkerProcess:
                 {"job_id": job_id, "payload": json.dumps(job)},
             )
             logger.warning("No model for job %s — re-enqueued to %s", job_id, stream_key)
-            return
+            return None
 
-        self._active_jobs += 1
-        try:
-            # Build agent config
-            config = build_agent_config(job, self.worker_id)
+        # Build agent config
+        config = build_agent_config(job, self.worker_id)
 
-            # LLM backend pointing at LM Studio
-            llm = OpenAILLM(
-                api_key="lm-studio",
-                model=model["id"],
-                base_url=self.llm_endpoint,
-            )
+        # LLM backend pointing at LM Studio
+        llm = OpenAILLM(
+            api_key="lm-studio",
+            model=model["id"],
+            base_url=self.llm_endpoint,
+        )
 
-            # Minimal env config (agent itself doesn't need Redis/Postgres)
-            env_config = LaddrConfig(
-                queue_backend="memory",
-                db_backend="sqlite",
-                llm_backend="openai",
-            )
+        # Minimal env config (agent itself doesn't need Redis/Postgres)
+        env_config = LaddrConfig(
+            queue_backend="memory",
+            db_backend="sqlite",
+            llm_backend="openai",
+        )
 
-            agent_config = AgentConfig(
-                name=config["name"],
-                role=config["role"],
-                goal=config["goal"],
-                backstory=config.get("backstory", ""),
-                max_iterations=config["max_iterations"],
-            )
+        agent_config = AgentConfig(
+            name=config["name"],
+            role=config["role"],
+            goal=config["goal"],
+            backstory=config.get("backstory", ""),
+            max_iterations=config["max_iterations"],
+        )
 
-            agent = CoreAgent(
-                config=agent_config,
-                env_config=env_config,
-                llm=llm,
-                instructions=config["instructions"],
-            )
+        agent = CoreAgent(
+            config=agent_config,
+            env_config=env_config,
+            llm=llm,
+            instructions=config["instructions"],
+        )
 
-            # Run agent — autonomous_run expects a dict with 'query' key
-            task_dict = {"query": config["instructions"]}
-            result = await agent.autonomous_run(task_dict)
+        # Run agent — autonomous_run expects a dict with 'query' key
+        task_dict = {"query": config["instructions"]}
+        result = await agent.autonomous_run(task_dict)
 
-            # Persist result to Redis with 30min TTL
-            result_key = f"laddr:results:{job_id}"
-            result_payload = json.dumps({
-                "job_id": job_id,
-                "worker_id": self.worker_id,
-                "model": model["id"],
-                "result": result,
-                "completed_at": time.time(),
-            })
-            await self._redis.set(result_key, result_payload, ex=1800)
-
-            # Fire callback if present
-            callback_url = job.get("callback_url")
-            callback_headers = job.get("callback_headers", {})
-            if callback_url:
-                await self._fire_callback(callback_url, callback_headers, result_payload)
-
-            logger.info("Job %s completed on model %s", job_id, model["id"])
-        finally:
-            self._active_jobs -= 1
-            # DECR atomic counter in Redis
-            counter_key = f"laddr:active:{self.worker_id}"
-            await self._redis.decr(counter_key)
+        logger.info("LLM job %s completed on model %s", job_id, model["id"])
+        return result
 
     # ------------------------------------------------------------------
     # Callback

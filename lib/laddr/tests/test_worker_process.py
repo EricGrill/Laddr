@@ -5,6 +5,7 @@ import os
 import tempfile
 
 import pytest
+import pytest_asyncio
 import yaml
 
 from laddr.core.worker_process import (
@@ -201,3 +202,43 @@ class TestScriptOnlyWorkerConfig:
         worker = WorkerProcess(str(config_file))
         assert worker.worker_id == "script-01"
         assert worker.llm_endpoint is None
+
+
+# ---------------------------------------------------------------------------
+# TestScriptJobExecution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestScriptJobExecution:
+    async def test_execute_script_job_returns_result(self):
+        from laddr.core.worker_process import _execute_script_job
+        job = {"job_id": "test-001", "task_type": "script", "command": "echo hello from script", "timeout_seconds": 10}
+        result = await _execute_script_job(job)
+        assert result["status"] == "success"
+        assert "hello from script" in result["stdout"]
+
+    async def test_script_job_without_command(self):
+        from laddr.core.worker_process import _execute_script_job
+        result = await _execute_script_job({"job_id": "no-cmd", "task_type": "script"})
+        assert result["status"] == "error"
+        assert "No command" in result["stderr"]
+
+
+# ---------------------------------------------------------------------------
+# TestToolRegistrationGating
+# ---------------------------------------------------------------------------
+
+
+from laddr.core.worker_process import _should_register_exec_tool
+
+
+class TestToolRegistrationGating:
+    def test_registers_when_skill_present(self):
+        assert _should_register_exec_tool({"skills": ["code-gen", "script-exec"]}) is True
+
+    def test_skips_when_skill_absent(self):
+        assert _should_register_exec_tool({"skills": ["code-gen"]}) is False
+
+    def test_skips_when_no_skills(self):
+        assert _should_register_exec_tool({}) is False
