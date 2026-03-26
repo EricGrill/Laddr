@@ -1,8 +1,7 @@
-// dashboard/src/pages/MissionControl/scene/AgentBot.tsx
-import { useRef, useState } from "react";
+import { useRef, useState, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Html } from "@react-three/drei";
-import type { Mesh } from "three";
+import { Html, useGLTF } from "@react-three/drei";
+import { Mesh, MeshStandardMaterial, Color } from "three";
 import type { MCAgent, Vec3 } from "../types";
 import { useUIStore } from "../stores/uiStore";
 import { useAnimatedPosition } from "../hooks/useAnimatedPosition";
@@ -19,67 +18,97 @@ const STATE_COLORS: Record<string, string> = {
   handoff: "#e67e22",
 };
 
+useGLTF.preload("/models/agent-bot.glb");
+
 interface AgentBotProps {
   agent: MCAgent;
   targetPosition: Vec3;
 }
 
 export function AgentBot({ agent, targetPosition }: AgentBotProps) {
-  const meshRef = useRef<Mesh>(null);
+  const groupRef = useRef<any>(null);
   const [hovered, setHovered] = useState(false);
   const selectEntity = useUIStore((s) => s.selectEntity);
   const selectedEntity = useUIStore((s) => s.selectedEntity);
-  const isSelected = selectedEntity?.id === agent.id && selectedEntity?.type === "agent";
+  const isSelected =
+    selectedEntity?.id === agent.id && selectedEntity?.type === "agent";
   const isFiltered = useUIStore((s) => s.isFiltered("agent", agent.state));
 
   const posRef = useAnimatedPosition(targetPosition);
   const color = STATE_COLORS[agent.state] ?? "#3498db";
 
-  // Bob animation for idle
+  const { scene } = useGLTF("/models/agent-bot.glb");
+
+  const clonedScene = useMemo(() => {
+    const clone = scene.clone(true);
+    clone.traverse((child) => {
+      if ((child as Mesh).isMesh) {
+        const mesh = child as Mesh;
+        mesh.material = new MeshStandardMaterial({
+          color: new Color(color).multiplyScalar(0.5),
+          emissive: new Color(color),
+          emissiveIntensity: isSelected ? 1.2 : hovered ? 0.8 : 0.4,
+          metalness: 0.7,
+          roughness: 0.3,
+          transparent: isFiltered,
+          opacity: isFiltered ? 0.1 : 1,
+        });
+      }
+    });
+    return clone;
+  }, [scene, color, isSelected, hovered, isFiltered]);
+
   useFrame((state) => {
-    if (!meshRef.current || !posRef.current) return;
-    meshRef.current.position.copy(posRef.current);
+    if (!groupRef.current || !posRef.current) return;
+    groupRef.current.position.copy(posRef.current);
 
     if (agent.state === "idle") {
-      meshRef.current.position.y += Math.sin(state.clock.elapsedTime * 2) * 0.1;
+      groupRef.current.position.y +=
+        Math.sin(state.clock.elapsedTime * 2) * 0.1;
     }
     if (agent.state === "errored") {
-      meshRef.current.position.x += Math.sin(state.clock.elapsedTime * 15) * 0.03;
+      groupRef.current.position.x +=
+        Math.sin(state.clock.elapsedTime * 15) * 0.03;
     }
   });
 
   return (
     <group>
-      <mesh
-        ref={meshRef}
+      <group
+        ref={groupRef}
+        scale={[1.5, 1.5, 1.5]}
         onClick={() => selectEntity({ id: agent.id, type: "agent" })}
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
       >
-        {/* Bot body - capsule shape */}
-        <capsuleGeometry args={[0.25, 0.5, 4, 8]} />
-        <meshStandardMaterial
+        <primitive object={clonedScene} />
+        <pointLight
           color={color}
-          emissive={color}
-          emissiveIntensity={isSelected ? 1.2 : hovered ? 0.8 : 0.4}
-          metalness={0.6}
-          roughness={0.3}
-          transparent={isFiltered}
-          opacity={isFiltered ? 0.1 : 1}
+          intensity={isSelected ? 2 : 0.5}
+          distance={3}
         />
-      </mesh>
+      </group>
 
-      {/* Name label on hover/select */}
       {(hovered || isSelected) && (
-        <Html position={[targetPosition.x, targetPosition.y + 1.2, targetPosition.z]} center distanceFactor={15}>
-          <div style={{
-            color: "#ffffff",
-            fontSize: "10px",
-            fontWeight: 600,
-            textShadow: "0 0 6px rgba(0,0,0,0.8)",
-            whiteSpace: "nowrap",
-            pointerEvents: "none",
-          }}>
+        <Html
+          position={[
+            targetPosition.x,
+            targetPosition.y + 2,
+            targetPosition.z,
+          ]}
+          center
+          distanceFactor={15}
+        >
+          <div
+            style={{
+              color: "#ffffff",
+              fontSize: "10px",
+              fontWeight: 600,
+              textShadow: `0 0 8px ${color}80, 0 0 4px rgba(0,0,0,0.9)`,
+              whiteSpace: "nowrap",
+              pointerEvents: "none",
+            }}
+          >
             {agent.name ?? agent.id}
           </div>
         </Html>
