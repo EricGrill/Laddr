@@ -30,6 +30,8 @@ def resolve_requirements(job_reqs: dict, template_registry: TemplateRegistry) ->
 
     Raises ValueError if mode is "template" and the template is not found.
     """
+    if not isinstance(job_reqs, dict):
+        return {"requirements": {}, "defaults": {}}
     mode = job_reqs.get("mode", "generic")
 
     if mode == "generic" or not mode:

@@ -259,7 +259,16 @@ class Dispatcher:
                         raw = raw.decode()
                     job = json.loads(raw)
 
-                    dispatched = await self._dispatch_job(job, stream_name, msg_id)
+                    try:
+                        dispatched = await self._dispatch_job(job, stream_name, msg_id)
+                    except Exception as exc:
+                        logger.error("Failed to dispatch job %s: %s", msg_id, exc)
+                        # ACK the poison message so it doesn't block the queue
+                        try:
+                            await self.redis.xack(stream_name, DISPATCHER_GROUP, msg_id)
+                        except Exception:
+                            pass
+                        continue
                     if not dispatched:
                         # TODO: persist waiting list to Redis for crash recovery
                         self._waiting.append({
