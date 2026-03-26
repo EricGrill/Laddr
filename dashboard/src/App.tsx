@@ -14,6 +14,7 @@ import Batches from "./pages/Batches";
 import BatchDetail from "./pages/BatchDetail";
 import Logs from "./pages/Logs";
 import Settings from "./pages/Settings";
+import JobBoardPage from "./pages/JobBoard";
 import "./App.css";
 
 function App() {
@@ -36,6 +37,7 @@ function App() {
               <Route path="/batches/:batchId" element={<BatchDetail />} />
               <Route path="/logs" element={<Logs />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/jobs-board" element={<JobBoardPage />} />
               <Route path="/mission-control" element={
                 <Suspense fallback={<div className="flex items-center justify-center h-full text-gray-500">Loading Mission Control...</div>}>
                   <MissionControl />
