@@ -23,6 +23,7 @@ from .commands import (
     run_dev_alias,
     scale,
     stop,
+    worker,
 )
 from .utils import LaddrError, console, print_error
 
@@ -50,6 +51,7 @@ cli.add_command(run_dev_alias)
 cli.add_command(check)
 cli.add_command(prompt)
 cli.add_command(infra)
+cli.add_command(worker)
 
 
 

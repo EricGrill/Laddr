@@ -11,6 +11,7 @@ from .init import init
 from .management import logs, ps, scale, stop
 from .prompt import prompt
 from .run import run, run_dev_alias
+from .worker import worker
 
 
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "run_dev_alias",
     "scale",
     "stop",
+    "worker",
 ]
