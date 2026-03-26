@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 
 from laddr.core.capability_matcher import matches_requirements, select_best_worker
@@ -58,6 +59,36 @@ class Dispatcher:
 
         return select_best_worker(alive, requirements)
 
+    async def _load_workers_from_redis(self) -> list[dict[str, Any]]:
+        """Load worker registrations from Redis into memory and return alive workers."""
+        if self.redis is None:
+            return self.worker_registry.list_alive()
+        try:
+            raw = await self.redis.hgetall("laddr:workers:registry")
+            workers = []
+            now = time.time()
+            for _wid, data in raw.items():
+                w = json.loads(data)
+                # Consider alive if heartbeat within 120s
+                if now - w.get("last_heartbeat", 0) < 120:
+                    workers.append(w)
+            return workers
+        except Exception as exc:
+            logger.warning("Failed to load workers from Redis: %s", exc)
+            return self.worker_registry.list_alive()
+
+    async def async_find_worker_for_job(self, job: dict[str, Any]) -> dict[str, Any] | None:
+        """Async version of find_worker_for_job that reads workers from Redis."""
+        job_reqs = job.get("requirements", {})
+        resolved = resolve_requirements(job_reqs, self.template_registry)
+        requirements = resolved["requirements"]
+
+        alive = await self._load_workers_from_redis()
+        if not alive:
+            return None
+
+        return select_best_worker(alive, requirements)
+
     # ------------------------------------------------------------------
     # Part B: Async dispatch loop (production)
     # ------------------------------------------------------------------
@@ -95,7 +126,7 @@ class Dispatcher:
 
     async def _dispatch_job(self, job: dict, stream: str, msg_id: str) -> bool:
         """Try to route a single job. Returns True if dispatched."""
-        worker = self.find_worker_for_job(job)
+        worker = await self.async_find_worker_for_job(job)
         if worker is None:
             return False
 
@@ -137,7 +168,7 @@ class Dispatcher:
         still_waiting: list[dict] = []
         for entry in self._waiting:
             job = entry["job"]
-            worker = self.find_worker_for_job(job)
+            worker = await self.async_find_worker_for_job(job)
             if worker is None:
                 still_waiting.append(entry)
                 continue
