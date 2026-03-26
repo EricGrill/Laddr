@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Home, Users, Briefcase, Play, Clock, GitBranch, Terminal, Settings, LogOut, Rocket } from 'lucide-react';
+import { Home, Users, Briefcase, Play, Clock, GitBranch, Terminal, Settings, LogOut, Gauge } from 'lucide-react';
 import { logout, getCurrentUser } from '../lib/auth';
 
 const navigation = [
@@ -11,7 +11,7 @@ const navigation = [
   { name: 'Batches', href: '/batches', icon: GitBranch },
   { name: 'Logs', href: '/logs', icon: Terminal },
   { name: 'Settings', href: '/settings', icon: Settings },
-  { name: 'Mission Control', href: '/mission-control', icon: Rocket },
+  { name: 'Mission Control', href: '/mission-control', icon: Gauge },
 ];
 
 export default function Sidebar() {
