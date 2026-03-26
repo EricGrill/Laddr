@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useMissionControl } from "./hooks/useMissionControl";
-import { SceneRoot } from "./scene/SceneRoot";
+import { PixiCanvas } from "./pixi/PixiCanvas";
 import { TopBar } from "./ui/TopBar";
 import { MCSidebar } from "./ui/Sidebar";
 import { InspectorPanel } from "./ui/InspectorPanel";
@@ -68,7 +68,7 @@ export default function MissionControlPage() {
   return (
     <div
       ref={containerRef}
-      className={`flex flex-col h-full w-full bg-[#0a0e1a] text-white overflow-hidden ${
+      className={`flex flex-col h-full w-full bg-[#1A2230] text-white overflow-hidden ${
         fullscreen ? "fixed inset-0 z-50" : ""
       }`}
     >
@@ -76,7 +76,7 @@ export default function MissionControlPage() {
       <div className="flex flex-1 overflow-hidden">
         {!fullscreen && <MCSidebar />}
         <div className="flex-1 relative">
-          <SceneRoot />
+          <PixiCanvas />
           <AlertToasts />
           <EventTicker />
         </div>
