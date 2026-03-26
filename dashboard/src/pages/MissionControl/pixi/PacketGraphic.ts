@@ -1,5 +1,5 @@
 // pixi/PacketGraphic.ts — Job packet factory and update functions
-import { Container, Graphics } from 'pixi.js';
+import { Container, Graphics, Text, TextStyle } from 'pixi.js';
 import type { JobPriority, JobState } from '../types';
 import { pulse } from './AnimationManager';
 
@@ -30,6 +30,8 @@ interface PacketRefs {
   cardGfx: Graphics;
   capsuleGfx: Graphics;
   chipGfx: Graphics;
+  jobNameText: Text;
+  priorityLabel: Text;
   typeColor: number;
   priorityColor: number;
   priority: JobPriority;
@@ -45,6 +47,7 @@ export function createPacket(
   priority: JobPriority,
   state: JobState,
   progress: number,
+  jobName?: string,
 ): Container {
   const container = new Container();
 
@@ -60,11 +63,44 @@ export function createPacket(
   const chipGfx = new Graphics();
   container.addChild(chipGfx);
 
+  // Job name text (shown on queued/processing cards)
+  const displayName = jobName ? (jobName.length > 12 ? jobName.slice(0, 12) : jobName) : jobType;
+  const jobNameText = new Text({
+    text: displayName,
+    style: new TextStyle({
+      fontSize: 7,
+      fill: '#cccccc',
+      fontFamily: 'Arial, Helvetica, sans-serif',
+    }),
+  });
+  jobNameText.anchor.set(0.5, 0.5);
+  jobNameText.x = 0;
+  jobNameText.y = 0;
+  container.addChild(jobNameText);
+
+  // Priority label for high/critical
+  const priorityLabel = new Text({
+    text: priority === 'critical' ? 'CRIT' : priority === 'high' ? 'HI' : '',
+    style: new TextStyle({
+      fontSize: 6,
+      fill: priority === 'critical' ? '#e35b5b' : '#f2a65a',
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontWeight: 'bold',
+    }),
+  });
+  priorityLabel.anchor.set(0.5, 0);
+  priorityLabel.x = 0;
+  priorityLabel.y = 5;
+  priorityLabel.visible = priority === 'critical' || priority === 'high';
+  container.addChild(priorityLabel);
+
   const refs: PacketRefs = {
     glowGfx,
     cardGfx,
     capsuleGfx,
     chipGfx,
+    jobNameText,
+    priorityLabel,
     typeColor: getTypeColor(jobType),
     priorityColor: PRIORITY_COLORS[priority],
     priority,
@@ -135,7 +171,7 @@ function redrawPacket(refs: PacketRefs) {
   // Card (queued)
   refs.cardGfx.clear();
   if (isQueued) {
-    const w = 16, h = 12;
+    const w = 24, h = 18;
     refs.cardGfx.roundRect(-w / 2, -h / 2, w, h, 2);
     refs.cardGfx.fill({ color: 0x2c313a, alpha: 0.8 });
     refs.cardGfx.stroke({ color: typeColor, width: 1, alpha: 0.6 });
@@ -155,7 +191,7 @@ function redrawPacket(refs: PacketRefs) {
   // Chip (processing)
   refs.chipGfx.clear();
   if (isProcessing) {
-    const w = 14, h = 10;
+    const w = 24, h = 16;
     refs.chipGfx.roundRect(-w / 2, -h / 2, w, h, 2);
     refs.chipGfx.fill({ color: 0x2c313a, alpha: 0.9 });
     refs.chipGfx.stroke({ color: typeColor, width: 1, alpha: 0.7 });
@@ -164,5 +200,17 @@ function redrawPacket(refs: PacketRefs) {
       refs.chipGfx.roundRect(-w / 2 + 2, h / 2 - 4, barW, 2, 1);
       refs.chipGfx.fill({ color: typeColor, alpha: 0.8 });
     }
+  }
+
+  // Show/hide text based on state
+  const showText = isQueued || isProcessing;
+  refs.jobNameText.visible = showText;
+  refs.priorityLabel.visible = showText && (refs.priority === 'critical' || refs.priority === 'high');
+  if (isProcessing) {
+    refs.jobNameText.y = -2;
+    refs.priorityLabel.y = 5;
+  } else {
+    refs.jobNameText.y = 0;
+    refs.priorityLabel.y = 6;
   }
 }

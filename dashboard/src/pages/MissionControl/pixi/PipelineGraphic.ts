@@ -5,7 +5,7 @@ import { bezierPoint, type BezierPath } from './AnimationManager';
 
 const LINE_COLOR = 0x3b4656;
 const DOT_COLOR = 0x63d7e6;
-const DOT_RADIUS = 2;
+const DOT_RADIUS = 3;
 const DOTS_PER_PIPE = 4;
 
 // Pipeline connections (from -> to)

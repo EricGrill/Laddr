@@ -1,5 +1,5 @@
 // pixi/WorkerGraphic.ts — Worker factory and update functions
-import { Container, Graphics } from 'pixi.js';
+import { Container, Graphics, Text, TextStyle } from 'pixi.js';
 import { lerp, pulse } from './AnimationManager';
 
 // Role -> visor color
@@ -19,9 +19,19 @@ export function getRoleColor(capabilities: string[]): number {
   return ROLE_COLORS.default;
 }
 
+const STATUS_COLORS: Record<string, string> = {
+  online: '#4caf50',
+  draining: '#e8d25b',
+  offline: '#666666',
+};
+
 interface WorkerRefs {
   bodyGfx: Graphics;
   activityGfx: Graphics;
+  nameText: Text;
+  statusText: Text;
+  jobBadgeGfx: Graphics;
+  jobBadgeText: Text;
   roleColor: number;
   posX: number;
   posY: number;
@@ -41,9 +51,62 @@ export function createWorker(id: string, roleColor: number): Container {
   const bodyGfx = new Graphics();
   container.addChild(bodyGfx);
 
+  // Worker name label
+  const shortId = id.length > 10 ? id.slice(0, 10) : id;
+  const nameText = new Text({
+    text: shortId,
+    style: new TextStyle({
+      fontSize: 8,
+      fill: '#cccccc',
+      fontFamily: 'Arial, Helvetica, sans-serif',
+    }),
+  });
+  nameText.anchor.set(0.5, 0);
+  nameText.x = 0;
+  nameText.y = 11;
+  container.addChild(nameText);
+
+  // Status text
+  const statusText = new Text({
+    text: 'online',
+    style: new TextStyle({
+      fontSize: 7,
+      fill: '#4caf50',
+      fontFamily: 'Arial, Helvetica, sans-serif',
+    }),
+  });
+  statusText.anchor.set(0.5, 0);
+  statusText.x = 0;
+  statusText.y = 20;
+  container.addChild(statusText);
+
+  // Job count badge
+  const jobBadgeGfx = new Graphics();
+  jobBadgeGfx.visible = false;
+  container.addChild(jobBadgeGfx);
+
+  const jobBadgeText = new Text({
+    text: '',
+    style: new TextStyle({
+      fontSize: 7,
+      fill: '#ffffff',
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontWeight: 'bold',
+    }),
+  });
+  jobBadgeText.anchor.set(0.5, 0.5);
+  jobBadgeText.x = 12;
+  jobBadgeText.y = -8;
+  jobBadgeText.visible = false;
+  container.addChild(jobBadgeText);
+
   const refs: WorkerRefs = {
     bodyGfx,
     activityGfx,
+    nameText,
+    statusText,
+    jobBadgeGfx,
+    jobBadgeText,
     roleColor,
     posX: 0,
     posY: 0,
@@ -66,6 +129,27 @@ export function updateWorker(
 ): void {
   const refs = WORKER_REFS.get(container);
   if (!refs) return;
+
+  // Update status text if changed
+  if (status !== refs.status) {
+    refs.statusText.text = status;
+    refs.statusText.style.fill = STATUS_COLORS[status] ?? '#888888';
+  }
+
+  // Update job badge
+  if (activeJobs !== refs.activeJobs) {
+    if (activeJobs > 0) {
+      refs.jobBadgeGfx.clear();
+      refs.jobBadgeGfx.circle(12, -8, 6);
+      refs.jobBadgeGfx.fill({ color: 0xe35b5b, alpha: 0.9 });
+      refs.jobBadgeGfx.visible = true;
+      refs.jobBadgeText.text = String(activeJobs);
+      refs.jobBadgeText.visible = true;
+    } else {
+      refs.jobBadgeGfx.visible = false;
+      refs.jobBadgeText.visible = false;
+    }
+  }
 
   refs.status = status;
   refs.activeJobs = activeJobs;

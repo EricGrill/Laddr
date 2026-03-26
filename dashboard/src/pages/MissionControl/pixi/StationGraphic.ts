@@ -51,6 +51,25 @@ export interface StationConfig {
   queueDepth: number;
 }
 
+// --- State label text ---
+const STATE_LABELS: Record<StationState, string> = {
+  active: 'ACTIVE',
+  idle: 'IDLE',
+  saturated: 'SATURATED',
+  blocked: 'BLOCKED',
+  errored: 'ERRORED',
+  offline: 'OFFLINE',
+};
+
+const STATE_LABEL_COLORS: Record<StationState, string> = {
+  active: '#4caf50',
+  idle: '#888888',
+  saturated: '#e8d25b',
+  blocked: '#e8d25b',
+  errored: '#e35b5b',
+  offline: '#555555',
+};
+
 /** Internal references stored on the container for updates */
 interface StationRefs {
   glowGfx: Graphics;
@@ -60,6 +79,8 @@ interface StationRefs {
   badgeGfx: Graphics;
   badgeText: Text;
   labelText: Text;
+  queueCountText: Text;
+  stateText: Text;
   accent: number;
   isDispatcher: boolean;
   platformW: number;
@@ -73,8 +94,8 @@ const STATION_REFS = new WeakMap<Container, StationRefs>();
 export function createStation(config: StationConfig, onClick?: (id: string) => void): Container {
   const accent = ACCENT_COLORS[config.type];
   const isDispatcher = config.type === 'dispatcher';
-  const platformW = isDispatcher ? 110 : 80;
-  const platformH = isDispatcher ? 80 : 60;
+  const platformW = isDispatcher ? 120 : 100;
+  const platformH = isDispatcher ? 90 : 70;
   const halfW = platformW / 2;
   const halfH = platformH / 2;
 
@@ -118,11 +139,26 @@ export function createStation(config: StationConfig, onClick?: (id: string) => v
   badgeText.visible = false;
   container.addChild(badgeText);
 
+  // Queue count — large centered number inside the platform
+  const queueCountText = new Text({
+    text: config.queueDepth > 0 ? String(config.queueDepth) : '',
+    style: new TextStyle({
+      fontSize: 18,
+      fill: '#ffffff',
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontWeight: 'bold',
+    }),
+  });
+  queueCountText.anchor.set(0.5, 0.5);
+  queueCountText.x = 0;
+  queueCountText.y = -2;
+  container.addChild(queueCountText);
+
   // Label
   const labelText = new Text({
     text: config.label,
     style: new TextStyle({
-      fontSize: 11,
+      fontSize: 13,
       fill: '#D9D7D1',
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontWeight: 'bold',
@@ -132,6 +168,20 @@ export function createStation(config: StationConfig, onClick?: (id: string) => v
   labelText.x = 0;
   labelText.y = halfH + 6;
   container.addChild(labelText);
+
+  // State text — below label, colored by state
+  const stateText = new Text({
+    text: STATE_LABELS[config.state] ?? 'IDLE',
+    style: new TextStyle({
+      fontSize: 9,
+      fill: STATE_LABEL_COLORS[config.state] ?? '#888888',
+      fontFamily: 'Arial, Helvetica, sans-serif',
+    }),
+  });
+  stateText.anchor.set(0.5, 0);
+  stateText.x = 0;
+  stateText.y = halfH + 22;
+  container.addChild(stateText);
 
   // Update badge
   updateBadge(badgeGfx, badgeText, config.queueDepth, halfW, halfH, accent);
@@ -144,6 +194,8 @@ export function createStation(config: StationConfig, onClick?: (id: string) => v
     badgeGfx,
     badgeText,
     labelText,
+    queueCountText,
+    stateText,
     accent,
     isDispatcher,
     platformW,
@@ -170,11 +222,14 @@ export function updateStation(
   if (state !== refs.state) {
     refs.state = state;
     drawStateDot(refs.stateDotGfx, state, halfW, halfH);
+    refs.stateText.text = STATE_LABELS[state] ?? 'IDLE';
+    refs.stateText.style.fill = STATE_LABEL_COLORS[state] ?? '#888888';
   }
 
   if (queueDepth !== refs.queueDepth) {
     refs.queueDepth = queueDepth;
     updateBadge(refs.badgeGfx, refs.badgeText, queueDepth, halfW, halfH, refs.accent);
+    refs.queueCountText.text = queueDepth > 0 ? String(queueDepth) : '';
   }
 }
 

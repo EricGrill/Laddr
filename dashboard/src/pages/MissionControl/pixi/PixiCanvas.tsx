@@ -1,6 +1,6 @@
 // pixi/PixiCanvas.tsx — Main PixiJS canvas component (imperative, no @pixi/react)
 import { useRef, useEffect } from 'react';
-import { Application, Container } from 'pixi.js';
+import { Application, Container, Text, TextStyle } from 'pixi.js';
 import { createEnvironment } from './Environment';
 import { createStation, updateStation, tickStation, STATION_POSITIONS, type StationConfig } from './StationGraphic';
 import { createWorker, updateWorker, getRoleColor, setWorkerPosition } from './WorkerGraphic';
@@ -26,7 +26,7 @@ function workerPosition(
   const row = Math.floor(index / cols);
   return {
     x: stationX - ((cols - 1) * spacing) / 2 + col * spacing,
-    y: stationY + 50 + row * spacing,
+    y: stationY + 60 + row * spacing,
   };
 }
 
@@ -37,7 +37,7 @@ function packetPosition(
   state: string,
 ): { x: number; y: number } {
   // Simple horizontal row above station, max 5 shown
-  const offsetX = (index - 2) * 22;
+  const offsetX = (index - 2) * 30;
 
   if (state === 'queued' || state === 'created') {
     return { x: stationX + offsetX, y: stationY - 55 };
@@ -196,7 +196,8 @@ export function PixiCanvas() {
 
       for (const j of visibleJobs) {
         if (!packetContainers.has(j.id)) {
-          const pc = createPacket(j.type, j.priority, j.state, j.progress ?? 0);
+          const jobName = j.id.length > 12 ? j.id.slice(0, 12) : j.id;
+          const pc = createPacket(j.type, j.priority, j.state, j.progress ?? 0, jobName);
           packetContainers.set(j.id, pc);
           packetLayer.addChild(pc);
         }
@@ -244,6 +245,47 @@ export function PixiCanvas() {
       app.stage.addChild(stationLayer);
       app.stage.addChild(workerLayer);
       app.stage.addChild(packetLayer);
+
+      // --- Summary text overlay ---
+      const overlayContainer = new Container();
+      app.stage.addChild(overlayContainer);
+
+      const activeJobsText = new Text({
+        text: 'ACTIVE JOBS: 0',
+        style: new TextStyle({
+          fontSize: 14,
+          fill: '#63d7e6',
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontWeight: 'bold',
+        }),
+      });
+      activeJobsText.x = 20;
+      activeJobsText.y = 14;
+      overlayContainer.addChild(activeJobsText);
+
+      const workersText = new Text({
+        text: 'WORKERS: 0 online',
+        style: new TextStyle({
+          fontSize: 11,
+          fill: '#cccccc',
+          fontFamily: 'Arial, Helvetica, sans-serif',
+        }),
+      });
+      workersText.x = 20;
+      workersText.y = 34;
+      overlayContainer.addChild(workersText);
+
+      const queueDepthText = new Text({
+        text: 'QUEUE DEPTH: 0',
+        style: new TextStyle({
+          fontSize: 11,
+          fill: '#cccccc',
+          fontFamily: 'Arial, Helvetica, sans-serif',
+        }),
+      });
+      queueDepthText.x = 20;
+      queueDepthText.y = 50;
+      overlayContainer.addChild(queueDepthText);
 
       // Initial sync
       syncStations();
@@ -320,6 +362,14 @@ export function PixiCanvas() {
             updatePacket(pc, pos.x, pos.y, j.state, j.progress ?? 0, elapsed);
           }
         }
+
+        // Update summary overlay
+        const onlineWorkers = workers.filter((w) => w.status === 'online').length;
+        const totalActiveJobs = allJobs.filter((j) => !HIDDEN.has(j.state)).length;
+        const totalQueueDepth = allJobs.filter((j) => j.state === 'queued' || j.state === 'created').length;
+        activeJobsText.text = `ACTIVE JOBS: ${totalActiveJobs}`;
+        workersText.text = `WORKERS: ${onlineWorkers} online`;
+        queueDepthText.text = `QUEUE DEPTH: ${totalQueueDepth}`;
 
         // Tick pipeline flow dots
         updatePipelineFlow(pipelineLayer, dt);
