@@ -1,7 +1,7 @@
 import { useRef, useState, useMemo, useCallback } from "react";
-import { useFrame } from "@react-three/fiber";
-import { Html, useGLTF } from "@react-three/drei";
-import { Mesh, MeshStandardMaterial, Color } from "three";
+import { useFrame, useLoader } from "@react-three/fiber";
+import { Html } from "@react-three/drei";
+import { Mesh, MeshStandardMaterial, TextureLoader, Color, DoubleSide } from "three";
 import type { MCStation, Vec3 } from "../types";
 import { useUIStore } from "../stores/uiStore";
 
@@ -17,13 +17,9 @@ interface QueueLineProps {
 function QueueLine({ queueDepth, color }: QueueLineProps) {
   const count = Math.min(queueDepth, 8);
   const hasOverflow = queueDepth > 8;
-
-  // One ref per cube (max 8)
   const cubeRefs = useRef<(Mesh | null)[]>([]);
   const setRef = useCallback(
-    (index: number) => (el: Mesh | null) => {
-      cubeRefs.current[index] = el;
-    },
+    (index: number) => (el: Mesh | null) => { cubeRefs.current[index] = el; },
     [],
   );
 
@@ -32,10 +28,7 @@ function QueueLine({ queueDepth, color }: QueueLineProps) {
     for (let i = 0; i < count; i++) {
       const mesh = cubeRefs.current[i];
       if (!mesh) continue;
-      // gentle bob with phase offset per cube
       mesh.position.y = 0.15 + Math.sin(t * 2 + i * 0.5) * 0.05;
-
-      // overflow indicator: last cube pulses more intensely
       if (hasOverflow && i === count - 1) {
         const pulse = 0.8 + Math.sin(t * 4) * 0.4;
         (mesh.material as MeshStandardMaterial).emissiveIntensity = pulse;
@@ -49,29 +42,19 @@ function QueueLine({ queueDepth, color }: QueueLineProps) {
 
   return (
     <>
-      {Array.from({ length: count }, (_, i) => {
-        const isOverflow = hasOverflow && i === count - 1;
-        const cubeSize = isOverflow ? 0.25 : 0.2;
-        return (
-          <mesh
-            key={i}
-            ref={setRef(i)}
-            position={[0, 0.15, -(i * 0.35 + 1.8)]}
-          >
-            <boxGeometry args={[cubeSize, cubeSize, cubeSize]} />
-            <meshStandardMaterial
-              color={color}
-              emissive={color}
-              emissiveIntensity={0.6}
-              transparent
-              opacity={0.7}
-            />
-          </mesh>
-        );
-      })}
+      {Array.from({ length: count }, (_, i) => (
+        <mesh key={i} ref={setRef(i)} position={[0, 0.15, -(i * 0.35 + 1.8)]}>
+          <boxGeometry args={[0.2, 0.2, 0.2]} />
+          <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.6} transparent opacity={0.7} />
+        </mesh>
+      ))}
     </>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/*  Station config                                                     */
+/* ------------------------------------------------------------------ */
 
 const STATION_COLORS: Record<string, string> = {
   intake: "#2ecc71",
@@ -84,40 +67,74 @@ const STATION_COLORS: Record<string, string> = {
   output: "#1abc9c",
 };
 
-const STATION_MODELS: Record<string, string> = {
-  intake: "/models/station-intake.glb",
-  dispatcher: "/models/station-dispatcher.glb",
-  llm: "/models/station-llm.glb",
-  tool: "/models/station-tool.glb",
-  code: "/models/station-code.glb",
-  supervisor: "/models/station-supervisor.glb",
-  error: "/models/station-error.glb",
-  output: "/models/station-output.glb",
+const STATION_TEXTURES: Record<string, string> = {
+  intake: "/textures/station-intake.png",
+  dispatcher: "/textures/station-dispatcher.png",
+  llm: "/textures/station-llm.png",
+  tool: "/textures/station-tool.png",
+  code: "/textures/station-code.png",
+  supervisor: "/textures/station-supervisor.png",
+  error: "/textures/station-error.png",
+  output: "/textures/station-output.png",
 };
 
-const STATION_SCALES: Record<string, number> = {
-  intake: 2.5,
-  dispatcher: 3.0,
-  llm: 3.0,
-  tool: 2.5,
-  code: 2.5,
-  supervisor: 2.5,
-  error: 2.0,
-  output: 2.5,
-};
+/* ------------------------------------------------------------------ */
+/*  StationBillboard – floating textured panel                         */
+/* ------------------------------------------------------------------ */
+
+function StationBillboard({
+  textureUrl,
+  color,
+  isSelected,
+  hovered,
+  isFiltered,
+}: {
+  textureUrl: string;
+  color: string;
+  isSelected: boolean;
+  hovered: boolean;
+  isFiltered: boolean;
+}) {
+  const texture = useLoader(TextureLoader, textureUrl);
+  const meshRef = useRef<Mesh>(null);
+
+  useFrame((state) => {
+    if (!meshRef.current) return;
+    // Gentle hover float
+    meshRef.current.position.y = 2.0 + Math.sin(state.clock.elapsedTime * 0.8) * 0.1;
+  });
+
+  const emissiveIntensity = isSelected ? 1.5 : hovered ? 1.0 : 0.5;
+
+  return (
+    <mesh ref={meshRef} position={[0, 2.0, 0]}>
+      <planeGeometry args={[3, 3]} />
+      <meshStandardMaterial
+        map={texture}
+        emissive={new Color(color)}
+        emissiveIntensity={emissiveIntensity}
+        transparent
+        opacity={isFiltered ? 0.1 : 0.95}
+        side={DoubleSide}
+        toneMapped={false}
+      />
+    </mesh>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  StationMesh                                                        */
+/* ------------------------------------------------------------------ */
 
 interface StationMeshProps {
   station: MCStation;
   position: Vec3;
 }
 
-// Preload all station models
-Object.values(STATION_MODELS).forEach((url) => {
-  useGLTF.preload(url);
-});
-
 export function StationMesh({ station, position }: StationMeshProps) {
   const groupRef = useRef<any>(null);
+  const ringRef = useRef<any>(null);
+  const baseRef = useRef<Mesh>(null);
   const [hovered, setHovered] = useState(false);
   const selectEntity = useUIStore((s) => s.selectEntity);
   const selectedEntity = useUIStore((s) => s.selectedEntity);
@@ -126,42 +143,7 @@ export function StationMesh({ station, position }: StationMeshProps) {
   const isFiltered = useUIStore((s) => s.isFiltered("station", station.state));
 
   const color = STATION_COLORS[station.type] ?? "#888888";
-  const modelUrl = STATION_MODELS[station.type] ?? STATION_MODELS.code;
-  const scale = STATION_SCALES[station.type] ?? 2.5;
-
-  const { scene } = useGLTF(modelUrl);
-
-  // Clone the scene and apply our custom material with emissive coloring
-  const clonedScene = useMemo(() => {
-    const clone = scene.clone(true);
-    const emissiveIntensity =
-      station.state === "active" || station.state === "saturated"
-        ? 0.6
-        : station.state === "errored"
-        ? 0.8
-        : 0.3;
-
-    clone.traverse((child) => {
-      if ((child as Mesh).isMesh) {
-        const mesh = child as Mesh;
-        const mat = new MeshStandardMaterial({
-          color: new Color(color).multiplyScalar(0.6),
-          emissive: new Color(
-            station.state === "errored" ? "#ff0000" : color
-          ),
-          emissiveIntensity: isSelected ? 1.2 : hovered ? 0.9 : emissiveIntensity,
-          metalness: 0.8,
-          roughness: 0.2,
-          transparent: isFiltered,
-          opacity: isFiltered ? 0.1 : 1,
-        });
-        mesh.material = mat;
-      }
-    });
-    return clone;
-  }, [scene, color, station.state, isSelected, hovered, isFiltered]);
-
-  const ringRef = useRef<any>(null);
+  const textureUrl = STATION_TEXTURES[station.type] ?? STATION_TEXTURES.code;
 
   useFrame((state, delta) => {
     if (!groupRef.current) return;
@@ -171,7 +153,7 @@ export function StationMesh({ station, position }: StationMeshProps) {
       groupRef.current.rotation.y += delta * 0.3;
     }
 
-    // Active stations bob gently
+    // Active stations bob
     if (station.state === "active" || station.state === "saturated") {
       groupRef.current.position.y = Math.sin(state.clock.elapsedTime * 1.5) * 0.05;
     }
@@ -188,59 +170,84 @@ export function StationMesh({ station, position }: StationMeshProps) {
         isSelected ? 1.5 : hovered ? 1.0 : pulse;
       ringRef.current.rotation.z = state.clock.elapsedTime * 0.2;
     }
+
+    // Pulse base platform
+    if (baseRef.current) {
+      const basePulse = 0.3 + Math.sin(state.clock.elapsedTime * 1.5 + position.z) * 0.15;
+      (baseRef.current.material as any).emissiveIntensity =
+        isSelected ? 0.8 : basePulse;
+    }
   });
 
   return (
     <group position={[position.x, position.y, position.z]}>
-      <group
-        ref={groupRef}
-        scale={[scale, scale, scale]}
+      {/* Clickable base platform */}
+      <mesh
+        ref={baseRef}
+        position={[0, 0.15, 0]}
         onClick={() => selectEntity({ id: station.id, type: "station" })}
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
       >
-        <primitive object={clonedScene} />
+        <cylinderGeometry args={[1.8, 2.0, 0.3, 6]} />
+        <meshStandardMaterial
+          color={new Color(color).multiplyScalar(0.3)}
+          emissive={new Color(color)}
+          emissiveIntensity={0.3}
+          metalness={0.8}
+          roughness={0.3}
+          transparent={isFiltered}
+          opacity={isFiltered ? 0.1 : 0.9}
+        />
+      </mesh>
+
+      {/* Billboard with generated texture */}
+      <group ref={groupRef}>
+        <StationBillboard
+          textureUrl={textureUrl}
+          color={color}
+          isSelected={isSelected}
+          hovered={hovered}
+          isFiltered={isFiltered}
+        />
       </group>
 
       {/* Glow ring under station */}
       <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
-        <ringGeometry args={[1.2, 1.6, 32]} />
+        <ringGeometry args={[1.8, 2.3, 32]} />
         <meshStandardMaterial
           color={color}
           emissive={color}
           emissiveIntensity={isSelected ? 1.5 : hovered ? 1.0 : 0.4}
           transparent
           opacity={isFiltered ? 0.05 : 0.6}
-          side={2}
+          side={DoubleSide}
         />
       </mesh>
 
       {/* Label */}
-      <Html position={[0, 3.5, 0]} center distanceFactor={15}>
+      <Html position={[0, 4.2, 0]} center distanceFactor={15}>
         <div
           style={{
             color: hovered || isSelected ? "#ffffff" : color,
-            fontSize: "11px",
-            fontWeight: 600,
+            fontSize: "12px",
+            fontWeight: 700,
             textAlign: "center",
             whiteSpace: "nowrap",
-            textShadow: `0 0 8px ${color}80, 0 0 4px rgba(0,0,0,0.9)`,
+            textShadow: `0 0 10px ${color}, 0 0 4px rgba(0,0,0,0.9)`,
             pointerEvents: "none",
             userSelect: "none",
+            letterSpacing: "1px",
+            textTransform: "uppercase",
           }}
         >
           {station.label}
-          {station.queueDepth > 0 && (
-            <div style={{ fontSize: "9px", opacity: 0.7 }}>
-              Queue: {station.queueDepth}
-            </div>
-          )}
         </div>
       </Html>
 
       {/* Holographic stats panel */}
       {!isFiltered && (
-        <Html position={[0, 4.5, 0]} center distanceFactor={15}>
+        <Html position={[0, 5.0, 0]} center distanceFactor={15}>
           <div
             style={{
               background: "rgba(10, 14, 26, 0.85)",
@@ -257,78 +264,31 @@ export function StationMesh({ station, position }: StationMeshProps) {
               userSelect: "none",
             }}
           >
-            {/* State badge */}
             <div style={{ display: "flex", alignItems: "center", gap: "4px", marginBottom: "4px" }}>
               <span
                 style={{
-                  display: "inline-block",
-                  width: "6px",
-                  height: "6px",
-                  borderRadius: "50%",
-                  background:
-                    station.state === "active"
-                      ? "#2ecc71"
-                      : station.state === "saturated"
-                      ? "#f1c40f"
-                      : station.state === "errored"
-                      ? "#e74c3c"
-                      : "#888888",
-                  boxShadow:
-                    station.state === "active"
-                      ? "0 0 4px #2ecc71"
-                      : station.state === "saturated"
-                      ? "0 0 4px #f1c40f"
-                      : station.state === "errored"
-                      ? "0 0 4px #e74c3c"
-                      : "none",
+                  display: "inline-block", width: "6px", height: "6px", borderRadius: "50%",
+                  background: station.state === "active" ? "#2ecc71" : station.state === "saturated" ? "#f1c40f" : station.state === "errored" ? "#e74c3c" : "#888888",
+                  boxShadow: station.state === "active" ? "0 0 4px #2ecc71" : station.state === "saturated" ? "0 0 4px #f1c40f" : station.state === "errored" ? "0 0 4px #e74c3c" : "none",
                 }}
               />
-              <span style={{ textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                {station.state}
-              </span>
+              <span style={{ textTransform: "uppercase", letterSpacing: "0.5px" }}>{station.state}</span>
             </div>
-
-            {/* Queue depth bar */}
             <div style={{ marginBottom: "3px" }}>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  marginBottom: "2px",
-                }}
-              >
-                <span>queue</span>
-                <span>{station.queueDepth}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+                <span>queue</span><span>{station.queueDepth}</span>
               </div>
-              <div
-                style={{
-                  height: "3px",
-                  borderRadius: "1.5px",
-                  background: "rgba(255,255,255,0.06)",
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    height: "100%",
-                    width: `${Math.min((station.queueDepth / Math.max(station.capacity, 1)) * 100, 100)}%`,
-                    background: `linear-gradient(90deg, ${color}, transparent)`,
-                    borderRadius: "1.5px",
-                  }}
-                />
+              <div style={{ height: "3px", borderRadius: "1.5px", background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${Math.min((station.queueDepth / Math.max(station.capacity, 1)) * 100, 100)}%`, background: `linear-gradient(90deg, ${color}, transparent)`, borderRadius: "1.5px" }} />
               </div>
             </div>
-
-            {/* Active jobs */}
             <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>jobs</span>
-              <span>{station.activeJobIds.length}</span>
+              <span>jobs</span><span>{station.activeJobIds.length}</span>
             </div>
           </div>
         </Html>
       )}
 
-      {/* Queue line – visible cubes behind station when jobs are waiting */}
       {!isFiltered && station.queueDepth > 0 && (
         <QueueLine queueDepth={station.queueDepth} color={color} />
       )}
