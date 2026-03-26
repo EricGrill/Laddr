@@ -18,6 +18,21 @@ const STATE_COLORS: Record<string, string> = {
   handoff: "#e67e22",
 };
 
+function nameToColor(name: string): string {
+  const PALETTE = ["#e74c3c", "#3498db", "#2ecc71", "#9b59b6", "#e67e22", "#f1c40f", "#1abc9c", "#e91e63"];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
+  return PALETTE[Math.abs(hash) % PALETTE.length];
+}
+
+function roleToScale(role: string | undefined): number {
+  if (!role) return 1.5;
+  const r = role.toLowerCase();
+  if (r.includes("supervisor") || r.includes("coordinator")) return 2.0;
+  if (r.includes("router") || r.includes("dispatcher")) return 1.8;
+  return 1.5;
+}
+
 useGLTF.preload("/models/agent-bot.glb");
 
 interface AgentBotProps {
@@ -27,6 +42,7 @@ interface AgentBotProps {
 
 export function AgentBot({ agent, targetPosition }: AgentBotProps) {
   const groupRef = useRef<any>(null);
+  const ringRef = useRef<Mesh>(null);
   const [hovered, setHovered] = useState(false);
   const selectEntity = useUIStore((s) => s.selectEntity);
   const selectedEntity = useUIStore((s) => s.selectedEntity);
@@ -36,6 +52,10 @@ export function AgentBot({ agent, targetPosition }: AgentBotProps) {
 
   const posRef = useAnimatedPosition(targetPosition);
   const color = STATE_COLORS[agent.state] ?? "#3498db";
+
+  const agentName = agent.name ?? agent.id;
+  const accentColor = nameToColor(agentName);
+  const scale = roleToScale(agent.role);
 
   const { scene } = useGLTF("/models/agent-bot.glb");
 
@@ -70,18 +90,38 @@ export function AgentBot({ agent, targetPosition }: AgentBotProps) {
       groupRef.current.position.x +=
         Math.sin(state.clock.elapsedTime * 15) * 0.03;
     }
+
+    // Rotate helmet ring
+    if (ringRef.current) {
+      ringRef.current.rotation.y = state.clock.elapsedTime * 1.0;
+    }
   });
+
+  const showFull = hovered || isSelected;
 
   return (
     <group>
       <group
         ref={groupRef}
-        scale={[1.5, 1.5, 1.5]}
+        scale={[scale, scale, scale]}
         onClick={() => selectEntity({ id: agent.id, type: "agent" })}
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
       >
         <primitive object={clonedScene} />
+
+        {/* Helmet accent ring */}
+        <mesh ref={ringRef} position={[0, 0.6, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.25, 0.04, 8, 16]} />
+          <meshStandardMaterial
+            color={accentColor}
+            emissive={accentColor}
+            emissiveIntensity={0.8}
+            transparent={isFiltered}
+            opacity={isFiltered ? 0.1 : 1}
+          />
+        </mesh>
+
         <pointLight
           color={color}
           intensity={isSelected ? 2 : 0.5}
@@ -89,30 +129,45 @@ export function AgentBot({ agent, targetPosition }: AgentBotProps) {
         />
       </group>
 
-      {(hovered || isSelected) && (
-        <Html
-          position={[
-            targetPosition.x,
-            targetPosition.y + 2,
-            targetPosition.z,
-          ]}
-          center
-          distanceFactor={15}
+      {/* Persistent name tag — always visible, brighter on hover/select */}
+      <Html
+        position={[
+          targetPosition.x,
+          targetPosition.y + 2,
+          targetPosition.z,
+        ]}
+        center
+        distanceFactor={15}
+      >
+        <div
+          style={{
+            color: showFull ? "#ffffff" : accentColor,
+            fontSize: showFull ? "10px" : "8px",
+            fontWeight: 600,
+            opacity: showFull ? 1.0 : 0.5,
+            textShadow: showFull
+              ? `0 0 8px ${color}80, 0 0 4px rgba(0,0,0,0.9)`
+              : `0 0 4px rgba(0,0,0,0.8)`,
+            whiteSpace: "nowrap",
+            pointerEvents: "none",
+            textAlign: "center",
+            transition: "all 0.2s ease",
+          }}
         >
-          <div
-            style={{
-              color: "#ffffff",
-              fontSize: "10px",
-              fontWeight: 600,
-              textShadow: `0 0 8px ${color}80, 0 0 4px rgba(0,0,0,0.9)`,
-              whiteSpace: "nowrap",
-              pointerEvents: "none",
-            }}
-          >
-            {agent.name ?? agent.id}
-          </div>
-        </Html>
-      )}
+          <div>{agentName}</div>
+          {agent.role && (
+            <div
+              style={{
+                fontSize: showFull ? "7px" : "6px",
+                fontWeight: 400,
+                opacity: showFull ? 0.8 : 0.4,
+              }}
+            >
+              {agent.role}
+            </div>
+          )}
+        </div>
+      </Html>
     </group>
   );
 }

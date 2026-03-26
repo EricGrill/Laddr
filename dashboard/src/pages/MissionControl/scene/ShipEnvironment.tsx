@@ -1,6 +1,10 @@
-import { useRef } from "react";
+import { useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
-import type { Mesh, PointLight } from "three";
+import { Color } from "three";
+import type { Mesh, PointLight, MeshStandardMaterial } from "three";
+import { useEntityStore } from "../stores/entityStore";
+import { useSceneStore } from "../stores/sceneStore";
+import type { MCStation } from "../types";
 
 function Floor() {
   return (
@@ -176,11 +180,78 @@ function CeilingLight({ position, color }: {
   );
 }
 
+/** Compute heat color and emissive intensity for a station based on its state and load */
+function getHeatProps(station: MCStation): { color: string; emissiveIntensity: number; pulseSpeed: number } {
+  if (station.state === "errored") {
+    return { color: "#c0392b", emissiveIntensity: 1.0, pulseSpeed: 4.0 };
+  }
+  if (station.state === "saturated") {
+    return { color: "#e74c3c", emissiveIntensity: 0.8, pulseSpeed: 1.5 };
+  }
+  if (station.state === "active") {
+    const threshold = station.capacity * 0.5;
+    if (station.queueDepth >= threshold) {
+      return { color: "#e67e22", emissiveIntensity: 0.6, pulseSpeed: 1.2 };
+    }
+    return { color: "#2980b9", emissiveIntensity: 0.4, pulseSpeed: 1.0 };
+  }
+  // idle, offline, blocked
+  return { color: "#1a2a4a", emissiveIntensity: 0.2, pulseSpeed: 0.6 };
+}
+
+/** A single heat spot on the floor under a station */
+function HeatSpot({ station }: { station: MCStation }) {
+  const meshRef = useRef<Mesh>(null);
+  const pos = useSceneStore((s) => s.getStationPosition(station.id));
+  const { color, emissiveIntensity, pulseSpeed } = getHeatProps(station);
+  const threeColor = useMemo(() => new Color(color), [color]);
+
+  useFrame((state) => {
+    if (!meshRef.current) return;
+    const mat = meshRef.current.material as MeshStandardMaterial;
+    const oscillation = Math.sin(state.clock.elapsedTime * pulseSpeed) * 0.1;
+    mat.emissiveIntensity = emissiveIntensity + oscillation;
+  });
+
+  return (
+    <mesh
+      ref={meshRef}
+      rotation={[-Math.PI / 2, 0, 0]}
+      position={[pos.x, 0.02, pos.z]}
+    >
+      <circleGeometry args={[2.5, 32]} />
+      <meshStandardMaterial
+        color={threeColor}
+        emissive={threeColor}
+        emissiveIntensity={emissiveIntensity}
+        transparent
+        opacity={0.4}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
+
+/** Heat map floor overlay: renders a glow under each station based on load */
+function HeatMapFloor() {
+  const stations = useEntityStore((s) => s.stations);
+  const stationList = useMemo(() => Object.values(stations), [stations]);
+
+  return (
+    <group>
+      {stationList.map((station) => (
+        <HeatSpot key={station.id} station={station} />
+      ))}
+    </group>
+  );
+}
+
 export function ShipEnvironment() {
   return (
     <group>
       <Floor />
       <GridLines />
+      <HeatMapFloor />
       <Walls />
       <Pipes />
       <Catwalks />
