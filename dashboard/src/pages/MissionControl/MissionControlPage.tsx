@@ -1,4 +1,5 @@
 import { useMissionControl } from "./hooks/useMissionControl";
+import { SceneRoot } from "./scene/SceneRoot";
 
 export default function MissionControlPage() {
   const { isConnected, error } = useMissionControl();
@@ -23,9 +24,7 @@ export default function MissionControlPage() {
 
       {/* 3D Scene viewport */}
       <div className="flex-1 relative">
-        <div className="absolute inset-0 flex items-center justify-center text-gray-600">
-          3D Scene (Task 6)
-        </div>
+        <SceneRoot />
       </div>
 
       {/* Right inspector panel - conditionally shown */}
