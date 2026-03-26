@@ -122,9 +122,12 @@ async def _execute_script_job(job: dict) -> dict:
             "workspace_path": "",
         }
 
+    raw_timeout = job.get("timeout_seconds", 300)
+    timeout = float(raw_timeout) if raw_timeout is not None else 300.0
+
     result = await execute_script(
         command=command,
-        timeout_seconds=job.get("timeout_seconds", 300),
+        timeout_seconds=timeout,
         experiment_id=job.get("experiment_id"),
         env=job.get("env"),
     )
