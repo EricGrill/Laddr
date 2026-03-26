@@ -1,0 +1,23 @@
+# Example Mac worker config — copy to ~/.laddr/worker.yml on snoke
+node: snoke
+worker_id: snoke-01
+
+llm:
+  provider: lmstudio
+  endpoint: http://localhost:1234/v1
+
+mcps:
+  - holocron
+  - context7
+  - nano-banana
+
+skills:
+  - web-research
+  - code-gen
+
+max_concurrent: 2
+
+server:
+  redis_url: redis://:YOUR_REDIS_PASSWORD@100.x.x.x:6379
+  minio_endpoint: 100.x.x.x:9000
+  api_url: http://100.x.x.x:8000

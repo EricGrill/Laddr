@@ -1,0 +1,26 @@
+node: bitlay
+worker_id: venice-01
+
+llm:
+  provider: venice
+  endpoint: https://api.venice.ai/v1
+  api_key: ${VENICE_API_KEY}
+
+models:
+  - id: llama-3.3-70b
+    provider: venice
+    context_window: 131072
+    loaded: true
+  - id: deepseek-r1-32b
+    provider: venice
+    context_window: 65536
+    loaded: true
+
+mcps: []
+skills: []
+max_concurrent: 3
+
+server:
+  redis_url: redis://:${REDIS_PASSWORD}@redis:6379
+  minio_endpoint: minio:9000
+  api_url: http://api:8000
