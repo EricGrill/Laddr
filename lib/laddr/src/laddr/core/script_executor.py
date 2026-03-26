@@ -214,14 +214,27 @@ async def execute_script(
     homebrew_paths = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin"
     if "/opt/homebrew/bin" not in path:
         proc_env["PATH"] = f"{homebrew_paths}:{path}"
-    # Disable torch.compile on CPU/Mac — inductor backend doesn't support it
+    # Mac/CPU PyTorch fixes
     import platform
     if platform.system() == "Darwin" or not os.environ.get("CUDA_VISIBLE_DEVICES"):
         proc_env.setdefault("TORCH_COMPILE", "0")
         proc_env.setdefault("TORCHDYNAMO_DISABLE", "1")
+        # Force float32 — BFloat16 not supported on CPU/MPS, causes dtype mismatch
+        proc_env.setdefault("TORCH_DTYPE", "float32")
+        proc_env.setdefault("NANOCONFIG_DTYPE", "float32")
 
     if env:
         proc_env.update(env)
+
+    # Auto-patch nanoGPT and common training scripts to use float32 on CPU/Mac
+    if platform.system() == "Darwin" or not os.environ.get("CUDA_VISIBLE_DEVICES"):
+        if "train.py" in command and "--dtype" not in command:
+            command = command.replace("train.py", "train.py --dtype=float32")
+        if "train.py" in command and "--compile" not in command:
+            command = command.replace("train.py", "train.py --compile=False")
+        # Also set device to cpu if no CUDA and --device not specified
+        if "train.py" in command and "--device" not in command:
+            command = command.replace("train.py", "train.py --device=cpu")
 
     start = time.monotonic()
     status = "success"
