@@ -61,6 +61,14 @@ from .tooling import (
     tool,
 )
 
+# Capability routing modules
+from .capability_matcher import matches_requirements, select_best_worker
+from .dispatcher import Dispatcher
+from .job_templates import TemplateRegistry, resolve_requirements
+from .model_aliases import ModelAliasRegistry
+from .worker_process import WorkerProcess
+from .worker_registry import WorkerRegistry
+
 # Backward-compatible aliases for protocol types
 LLMBase = LLMBackend
 
@@ -126,4 +134,13 @@ __all__ = [
     "AnthropicLLM",
     "GeminiLLM",
     "LLMBase",
+    # Capability routing
+    "matches_requirements",
+    "select_best_worker",
+    "Dispatcher",
+    "TemplateRegistry",
+    "resolve_requirements",
+    "ModelAliasRegistry",
+    "WorkerProcess",
+    "WorkerRegistry",
 ]
