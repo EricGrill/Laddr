@@ -7,6 +7,7 @@ import { StationLayer } from "./StationLayer";
 import { PipelineLayer } from "./PipelineLayer";
 import { AgentLayer } from "./AgentLayer";
 import { JobLayer } from "./JobLayer";
+import { EffectsLayer } from "./EffectsLayer";
 
 export function SceneRoot() {
   return (
@@ -31,6 +32,9 @@ export function SceneRoot() {
 
       {/* Camera */}
       <CameraController />
+
+      {/* Effects */}
+      <EffectsLayer />
 
       {/* Post-processing */}
       <EffectComposer>
