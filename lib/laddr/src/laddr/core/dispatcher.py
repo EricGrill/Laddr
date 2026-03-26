@@ -71,6 +71,17 @@ class Dispatcher:
                 w = json.loads(data)
                 # Consider alive if heartbeat within 120s
                 if now - w.get("last_heartbeat", 0) < 120:
+                    # Normalize: ensure capabilities dict exists
+                    # Workers may store models/mcps/skills at top level or under capabilities
+                    if "capabilities" not in w:
+                        w["capabilities"] = {
+                            "models": w.get("models", []),
+                            "mcps": w.get("mcps", []),
+                            "skills": w.get("skills", []),
+                            "max_concurrent": w.get("max_concurrent", 1),
+                        }
+                    if "active_jobs" not in w:
+                        w["active_jobs"] = 0
                     workers.append(w)
             return workers
         except Exception as exc:
