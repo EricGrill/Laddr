@@ -119,6 +119,17 @@ class SubmitCapabilityJobRequest(BaseModel):
     callback_headers: dict = PydanticField(default_factory=dict)
 
 
+class SubmitScriptJobRequest(BaseModel):
+    """Request body for submitting a direct script execution job."""
+    command: str
+    timeout_seconds: int = 300
+    experiment_id: str | None = None
+    env: dict = PydanticField(default_factory=dict)
+    priority: str = "normal"
+    callback_url: str | None = None
+    callback_headers: dict = PydanticField(default_factory=dict)
+
+
 class JobTemplateRequest(BaseModel):
     name: str
     description: str = ""
@@ -2219,6 +2230,48 @@ async def submit_capability_job(request: SubmitCapabilityJobRequest):
 
     return {
         "job_id": job_id,
+        "status": "queued",
+        "priority": priority,
+        "stream": stream_key,
+        "created_at": created_at,
+    }
+
+
+@app.post("/api/jobs/script", dependencies=[require_api_key])
+async def submit_script_job(request: SubmitScriptJobRequest):
+    """Submit a direct script execution job with capability-based routing."""
+    from laddr.core.message_bus import priority_stream_key, PRIORITY_LEVELS
+
+    job_id = str(uuid.uuid4())
+    created_at = datetime.utcnow().isoformat()
+
+    job_payload = {
+        "job_id": job_id,
+        "task_type": "script",
+        "command": request.command,
+        "timeout_seconds": str(request.timeout_seconds),
+        "experiment_id": request.experiment_id or "",
+        "env": json.dumps(request.env),
+        "requirements": json.dumps({"mode": "explicit", "skills": ["script-exec"]}),
+        "priority": request.priority,
+        "created_at": created_at,
+    }
+    if request.callback_url:
+        job_payload["callback_url"] = request.callback_url
+        job_payload["callback_headers"] = json.dumps(request.callback_headers)
+
+    priority = request.priority if request.priority in PRIORITY_LEVELS else "normal"
+    stream_key = priority_stream_key(priority)
+
+    try:
+        redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
+        await redis_client.xadd(stream_key, job_payload)
+    except AttributeError:
+        logger.warning("message_bus does not expose a Redis client; job not enqueued to stream")
+
+    return {
+        "job_id": job_id,
+        "task_type": "script",
         "status": "queued",
         "priority": priority,
         "stream": stream_key,
