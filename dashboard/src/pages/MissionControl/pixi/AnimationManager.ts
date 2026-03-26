@@ -1,6 +1,4 @@
-// pixi/AnimationManager.ts — Central animation tick manager
-import { useRef, useCallback } from "react";
-import { useTick } from "@pixi/react";
+// pixi/AnimationManager.ts — Pure animation utility functions (no @pixi/react)
 
 // --- Easing functions ---
 
@@ -90,31 +88,4 @@ export function bezierPoint(
       3 * u * tt * path.cy1 +
       ttt * path.y1,
   };
-}
-
-// --- Hook: useElapsed ---
-
-export function useElapsed(): { elapsed: number } {
-  const ref = useRef({ elapsed: 0 });
-
-  useTick((ticker) => {
-    ref.current.elapsed += ticker.deltaMS / 1000;
-  });
-
-  return ref.current;
-}
-
-// --- Hook: useAnimationTick ---
-
-export function useAnimationTick(
-  callback: (elapsed: number, dt: number) => void,
-) {
-  const elapsedRef = useRef(0);
-  const cb = useCallback(callback, [callback]);
-
-  useTick((ticker) => {
-    const dt = ticker.deltaMS / 1000;
-    elapsedRef.current += dt;
-    cb(elapsedRef.current, dt);
-  });
 }

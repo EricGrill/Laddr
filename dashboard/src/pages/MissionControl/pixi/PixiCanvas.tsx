@@ -1,22 +1,19 @@
-// pixi/PixiCanvas.tsx — Main PixiJS canvas component
-import { useRef, useMemo } from "react";
-import { Application, extend } from "@pixi/react";
-import { Container, Graphics, Text as PixiText } from "pixi.js";
-import { Environment } from "./Environment";
-import { StationGraphic, STATION_POSITIONS } from "./StationGraphic";
-import { WorkerGraphic } from "./WorkerGraphic";
-import { PacketGraphic } from "./PacketGraphic";
-import { PipelineGraphic } from "./PipelineGraphic";
-import { useEntityStore } from "../stores/entityStore";
-import type { StationType, StationState } from "../types";
-
-extend({ Container, Graphics, Text: PixiText });
+// pixi/PixiCanvas.tsx — Main PixiJS canvas component (imperative, no @pixi/react)
+import { useRef, useEffect } from 'react';
+import { Application, Container } from 'pixi.js';
+import { createEnvironment } from './Environment';
+import { createStation, updateStation, tickStation, STATION_POSITIONS, type StationConfig } from './StationGraphic';
+import { createWorker, updateWorker, getRoleColor, setWorkerPosition } from './WorkerGraphic';
+import { createPacket, updatePacket } from './PacketGraphic';
+import { createPipelines, updatePipelineFlow } from './PipelineGraphic';
+import { useEntityStore } from '../stores/entityStore';
+import { useUIStore } from '../stores/uiStore';
+import type { StationType, StationState, MCWorker, MCJob } from '../types';
 
 const CANVAS_W = 840;
 const CANVAS_H = 780;
 const BG_COLOR = 0x1a2230;
 
-// Compute worker positions around their associated station
 function workerPosition(
   stationX: number,
   stationY: number,
@@ -33,185 +30,272 @@ function workerPosition(
   };
 }
 
-// Compute job/packet positions near a station
 function packetPosition(
   stationX: number,
   stationY: number,
   index: number,
   state: string,
 ): { x: number; y: number } {
-  if (state === "queued" || state === "created") {
-    // Fan out above the station
+  if (state === 'queued' || state === 'created') {
     const offset = (index - 2) * 20;
     return { x: stationX + offset, y: stationY - 50 };
   }
-  if (state === "processing") {
-    // Chip above station
+  if (state === 'processing') {
     return { x: stationX + (index - 1) * 18, y: stationY - 35 };
   }
-  // Transit: between stations
   return { x: stationX, y: stationY - 20 };
+}
+
+function buildStationList(stations: Record<string, { id: string; type: string; label: string; state: string; queueDepth: number }>): StationConfig[] {
+  const storeStations = Object.values(stations);
+  if (storeStations.length > 0) {
+    return storeStations.map((s) => {
+      const layout = STATION_POSITIONS[s.id] ??
+        STATION_POSITIONS[s.type] ?? { x: 400, y: 400, type: s.type, label: s.label };
+      return {
+        id: s.id,
+        type: s.type as StationType,
+        label: s.label || layout.label,
+        state: s.state as StationState,
+        x: layout.x,
+        y: layout.y,
+        queueDepth: s.queueDepth,
+      };
+    });
+  }
+  return Object.entries(STATION_POSITIONS).map(([id, layout]) => ({
+    id,
+    type: layout.type,
+    label: layout.label,
+    state: 'idle' as StationState,
+    x: layout.x,
+    y: layout.y,
+    queueDepth: 0,
+  }));
 }
 
 export function PixiCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const stations = useEntityStore((s) => s.stations);
-  const workers = useEntityStore((s) => s.workers);
-  const jobs = useEntityStore((s) => s.jobs);
+  useEffect(() => {
+    if (!containerRef.current) return;
 
-  // Build station list from store, falling back to layout defaults
-  const stationList = useMemo(() => {
-    const storeStations = Object.values(stations);
-    if (storeStations.length > 0) {
-      return storeStations.map((s) => {
-        const layout = STATION_POSITIONS[s.id] ??
-          STATION_POSITIONS[s.type] ?? {
-            x: 400,
-            y: 400,
-            type: s.type,
-            label: s.label,
-          };
-        return {
-          id: s.id,
-          type: s.type as StationType,
-          label: s.label || layout.label,
-          state: s.state as StationState,
-          x: layout.x,
-          y: layout.y,
-          queueDepth: s.queueDepth,
-        };
+    const app = new Application();
+    let destroyed = false;
+
+    // Scene object maps
+    const stationContainers = new Map<string, Container>();
+    const workerContainers = new Map<string, Container>();
+    const packetContainers = new Map<string, Container>();
+
+    // Layers
+    const stationLayer = new Container();
+    const workerLayer = new Container();
+    const packetLayer = new Container();
+    let pipelineLayer: Container;
+    let elapsed = 0;
+    let unsubStore: (() => void) | undefined;
+
+    const selectEntity = useUIStore.getState().selectEntity;
+
+    // --- Sync functions ---
+
+    function syncStations() {
+      const state = useEntityStore.getState();
+      const stationList = buildStationList(state.stations);
+      const currentIds = new Set(stationList.map((s) => s.id));
+
+      // Remove old
+      for (const [id, sc] of stationContainers) {
+        if (!currentIds.has(id)) {
+          stationLayer.removeChild(sc);
+          sc.destroy({ children: true });
+          stationContainers.delete(id);
+        }
+      }
+
+      // Create or update
+      for (const s of stationList) {
+        let sc = stationContainers.get(s.id);
+        if (!sc) {
+          sc = createStation(s, (id) => selectEntity({ id, type: 'station' }));
+          stationContainers.set(s.id, sc);
+          stationLayer.addChild(sc);
+        } else {
+          updateStation(sc, s.state, s.queueDepth);
+        }
+      }
+    }
+
+    function syncWorkers() {
+      const state = useEntityStore.getState();
+      const workers = Object.values(state.workers);
+      const currentIds = new Set(workers.map((w) => w.id));
+
+      // Remove old
+      for (const [id, wc] of workerContainers) {
+        if (!currentIds.has(id)) {
+          workerLayer.removeChild(wc);
+          wc.destroy({ children: true });
+          workerContainers.delete(id);
+        }
+      }
+
+      // Create new workers
+      const stationWorkerGroups: Record<string, MCWorker[]> = {};
+      for (const w of workers) {
+        const cap = w.capabilities[0] ?? 'dispatcher';
+        if (!stationWorkerGroups[cap]) stationWorkerGroups[cap] = [];
+        stationWorkerGroups[cap].push(w);
+      }
+
+      for (const [cap, group] of Object.entries(stationWorkerGroups)) {
+        const layout = STATION_POSITIONS[cap] ?? STATION_POSITIONS.dispatcher;
+        for (let i = 0; i < group.length; i++) {
+          const w = group[i];
+          if (!workerContainers.has(w.id)) {
+            const roleColor = getRoleColor(w.capabilities);
+            const wc = createWorker(w.id, roleColor);
+            const pos = workerPosition(layout.x, layout.y, i, group.length);
+            setWorkerPosition(wc, pos.x, pos.y);
+            workerContainers.set(w.id, wc);
+            workerLayer.addChild(wc);
+          }
+        }
+      }
+    }
+
+    function syncPackets() {
+      const state = useEntityStore.getState();
+      const jobs = Object.values(state.jobs);
+      const currentIds = new Set(jobs.map((j) => j.id));
+
+      // Remove old
+      for (const [id, pc] of packetContainers) {
+        if (!currentIds.has(id)) {
+          packetLayer.removeChild(pc);
+          pc.destroy({ children: true });
+          packetContainers.delete(id);
+        }
+      }
+
+      // Create new
+      for (const j of jobs) {
+        if (!packetContainers.has(j.id)) {
+          const pc = createPacket(j.type, j.priority, j.state, j.progress ?? 0);
+          packetContainers.set(j.id, pc);
+          packetLayer.addChild(pc);
+        }
+      }
+    }
+
+    // --- Init ---
+
+    const initPromise = app.init({
+      background: BG_COLOR,
+      resizeTo: containerRef.current!,
+      antialias: true,
+      autoDensity: true,
+      resolution: window.devicePixelRatio || 1,
+    }).then(() => {
+      if (destroyed) {
+        app.destroy(true);
+        return;
+      }
+
+      containerRef.current!.appendChild(app.canvas);
+
+      // Build scene
+      const environmentLayer = createEnvironment(CANVAS_W, CANVAS_H);
+      app.stage.addChild(environmentLayer);
+
+      pipelineLayer = createPipelines();
+      app.stage.addChild(pipelineLayer);
+
+      app.stage.addChild(stationLayer);
+      app.stage.addChild(workerLayer);
+      app.stage.addChild(packetLayer);
+
+      // Initial sync
+      syncStations();
+      syncWorkers();
+      syncPackets();
+
+      // Subscribe to store changes
+      unsubStore = useEntityStore.subscribe(() => {
+        if (destroyed) return;
+        syncStations();
+        syncWorkers();
+        syncPackets();
       });
-    }
-    // Default layout when no data from backend
-    return Object.entries(STATION_POSITIONS).map(([id, layout]) => ({
-      id,
-      type: layout.type,
-      label: layout.label,
-      state: "idle" as StationState,
-      x: layout.x,
-      y: layout.y,
-      queueDepth: 0,
-    }));
-  }, [stations]);
 
-  // Build worker list with positions
-  const workerList = useMemo(() => {
-    const ws = Object.values(workers);
-    // Group workers by their primary capability to place near stations
-    const stationWorkers: Record<string, typeof ws> = {};
-    for (const w of ws) {
-      const cap = w.capabilities[0] ?? "dispatcher";
-      if (!stationWorkers[cap]) stationWorkers[cap] = [];
-      stationWorkers[cap].push(w);
-    }
+      // Animation ticker
+      app.ticker.add((ticker) => {
+        const dt = ticker.deltaMS / 1000;
+        elapsed += dt;
 
-    const result: Array<{
-      worker: (typeof ws)[0];
-      x: number;
-      y: number;
-    }> = [];
+        // Tick station animations
+        for (const sc of stationContainers.values()) {
+          tickStation(sc, elapsed);
+        }
 
-    for (const [cap, group] of Object.entries(stationWorkers)) {
-      const layout = STATION_POSITIONS[cap] ?? STATION_POSITIONS.dispatcher;
-      for (let i = 0; i < group.length; i++) {
-        const pos = workerPosition(layout.x, layout.y, i, group.length);
-        result.push({ worker: group[i], x: pos.x, y: pos.y });
-      }
-    }
-    return result;
-  }, [workers]);
+        // Tick workers (position lerp + visuals)
+        const state = useEntityStore.getState();
+        const workers = Object.values(state.workers);
+        const stationWorkerGroups: Record<string, MCWorker[]> = {};
+        for (const w of workers) {
+          const cap = w.capabilities[0] ?? 'dispatcher';
+          if (!stationWorkerGroups[cap]) stationWorkerGroups[cap] = [];
+          stationWorkerGroups[cap].push(w);
+        }
+        for (const [cap, group] of Object.entries(stationWorkerGroups)) {
+          const layout = STATION_POSITIONS[cap] ?? STATION_POSITIONS.dispatcher;
+          for (let i = 0; i < group.length; i++) {
+            const w = group[i];
+            const wc = workerContainers.get(w.id);
+            if (!wc) continue;
+            const pos = workerPosition(layout.x, layout.y, i, group.length);
+            updateWorker(wc, pos.x, pos.y, w.status, w.activeJobs, elapsed, dt);
+          }
+        }
 
-  // Build job/packet list with positions
-  const jobList = useMemo(() => {
-    const js = Object.values(jobs);
-    // Group by current station for positioning
-    const stationJobs: Record<string, typeof js> = {};
-    for (const j of js) {
-      const sid = j.currentStationId ?? "intake";
-      if (!stationJobs[sid]) stationJobs[sid] = [];
-      stationJobs[sid].push(j);
-    }
+        // Tick packets
+        const jobs = Object.values(state.jobs);
+        const stationJobGroups: Record<string, MCJob[]> = {};
+        for (const j of jobs) {
+          const sid = j.currentStationId ?? 'intake';
+          if (!stationJobGroups[sid]) stationJobGroups[sid] = [];
+          stationJobGroups[sid].push(j);
+        }
+        for (const [sid, group] of Object.entries(stationJobGroups)) {
+          const layout = STATION_POSITIONS[sid] ?? STATION_POSITIONS.intake;
+          for (let i = 0; i < group.length; i++) {
+            const j = group[i];
+            const pc = packetContainers.get(j.id);
+            if (!pc) continue;
+            const pos = packetPosition(layout.x, layout.y, i, j.state);
+            updatePacket(pc, pos.x, pos.y, j.state, j.progress ?? 0, elapsed);
+          }
+        }
 
-    const result: Array<{
-      job: (typeof js)[0];
-      x: number;
-      y: number;
-    }> = [];
+        // Tick pipeline flow dots
+        updatePipelineFlow(pipelineLayer, dt);
+      });
+    });
 
-    for (const [sid, group] of Object.entries(stationJobs)) {
-      const layout =
-        STATION_POSITIONS[sid] ?? STATION_POSITIONS.intake;
-      for (let i = 0; i < group.length; i++) {
-        const pos = packetPosition(layout.x, layout.y, i, group[i].state);
-        result.push({ job: group[i], x: pos.x, y: pos.y });
-      }
-    }
-    return result;
-  }, [jobs]);
+    return () => {
+      destroyed = true;
+      unsubStore?.();
+      initPromise.then(() => {
+        app.destroy(true);
+      });
+    };
+  }, []);
 
   return (
     <div
       ref={containerRef}
-      style={{ width: "100%", height: "100%", position: "relative" }}
-    >
-      <Application
-        resizeTo={containerRef as React.RefObject<HTMLElement>}
-        background={BG_COLOR}
-        antialias
-        autoDensity
-        resolution={window.devicePixelRatio || 1}
-      >
-        {/* Environment: floor, grid, vignette */}
-        <pixiContainer>
-          <Environment width={CANVAS_W} height={CANVAS_H} />
-        </pixiContainer>
-
-        {/* Pipeline routes */}
-        <pixiContainer>
-          <PipelineGraphic />
-        </pixiContainer>
-
-        {/* Stations */}
-        <pixiContainer>
-          {stationList.map((s) => (
-            <StationGraphic
-              key={s.id}
-              id={s.id}
-              type={s.type}
-              label={s.label}
-              state={s.state}
-              x={s.x}
-              y={s.y}
-              queueDepth={s.queueDepth}
-            />
-          ))}
-        </pixiContainer>
-
-        {/* Workers */}
-        <pixiContainer>
-          {workerList.map((w) => (
-            <WorkerGraphic
-              key={w.worker.id}
-              worker={w.worker}
-              targetX={w.x}
-              targetY={w.y}
-            />
-          ))}
-        </pixiContainer>
-
-        {/* Packets (jobs) */}
-        <pixiContainer>
-          {jobList.map((j) => (
-            <PacketGraphic
-              key={j.job.id}
-              job={j.job}
-              x={j.x}
-              y={j.y}
-            />
-          ))}
-        </pixiContainer>
-      </Application>
-    </div>
+      style={{ width: '100%', height: '100%', position: 'relative' }}
+    />
   );
 }
