@@ -169,6 +169,96 @@ export function StationMesh({ station, position }: StationMeshProps) {
           )}
         </div>
       </Html>
+
+      {/* Holographic stats panel */}
+      {!isFiltered && (
+        <Html position={[0, 4.5, 0]} center distanceFactor={15}>
+          <div
+            style={{
+              background: "rgba(10, 14, 26, 0.85)",
+              backdropFilter: "blur(4px)",
+              border: `1px solid ${color}4D`,
+              borderRadius: "6px",
+              padding: "6px 10px",
+              fontFamily: "monospace",
+              fontSize: "9px",
+              color: `${color}CC`,
+              boxShadow: `0 0 12px ${color}26`,
+              width: "100px",
+              pointerEvents: "none",
+              userSelect: "none",
+            }}
+          >
+            {/* State badge */}
+            <div style={{ display: "flex", alignItems: "center", gap: "4px", marginBottom: "4px" }}>
+              <span
+                style={{
+                  display: "inline-block",
+                  width: "6px",
+                  height: "6px",
+                  borderRadius: "50%",
+                  background:
+                    station.state === "active"
+                      ? "#2ecc71"
+                      : station.state === "saturated"
+                      ? "#f1c40f"
+                      : station.state === "errored"
+                      ? "#e74c3c"
+                      : "#888888",
+                  boxShadow:
+                    station.state === "active"
+                      ? "0 0 4px #2ecc71"
+                      : station.state === "saturated"
+                      ? "0 0 4px #f1c40f"
+                      : station.state === "errored"
+                      ? "0 0 4px #e74c3c"
+                      : "none",
+                }}
+              />
+              <span style={{ textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                {station.state}
+              </span>
+            </div>
+
+            {/* Queue depth bar */}
+            <div style={{ marginBottom: "3px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: "2px",
+                }}
+              >
+                <span>queue</span>
+                <span>{station.queueDepth}</span>
+              </div>
+              <div
+                style={{
+                  height: "3px",
+                  borderRadius: "1.5px",
+                  background: "rgba(255,255,255,0.06)",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${Math.min((station.queueDepth / Math.max(station.capacity, 1)) * 100, 100)}%`,
+                    background: `linear-gradient(90deg, ${color}, transparent)`,
+                    borderRadius: "1.5px",
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Active jobs */}
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>jobs</span>
+              <span>{station.activeJobIds.length}</span>
+            </div>
+          </div>
+        </Html>
+      )}
     </group>
   );
 }
