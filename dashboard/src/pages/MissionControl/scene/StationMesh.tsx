@@ -93,10 +93,32 @@ export function StationMesh({ station, position }: StationMeshProps) {
     return clone;
   }, [scene, color, station.state, isSelected, hovered, isFiltered]);
 
-  // Subtle rotation for dispatcher
-  useFrame((_, delta) => {
-    if (station.type === "dispatcher" && groupRef.current) {
+  const ringRef = useRef<any>(null);
+
+  useFrame((state, delta) => {
+    if (!groupRef.current) return;
+
+    // Dispatcher spins continuously
+    if (station.type === "dispatcher") {
       groupRef.current.rotation.y += delta * 0.3;
+    }
+
+    // Active stations bob gently
+    if (station.state === "active" || station.state === "saturated") {
+      groupRef.current.position.y = Math.sin(state.clock.elapsedTime * 1.5) * 0.05;
+    }
+
+    // Errored stations twitch
+    if (station.state === "errored") {
+      groupRef.current.position.x = Math.sin(state.clock.elapsedTime * 12) * 0.02;
+    }
+
+    // Pulse the glow ring
+    if (ringRef.current) {
+      const pulse = 0.4 + Math.sin(state.clock.elapsedTime * 2 + position.x) * 0.2;
+      (ringRef.current.material as any).emissiveIntensity =
+        isSelected ? 1.5 : hovered ? 1.0 : pulse;
+      ringRef.current.rotation.z = state.clock.elapsedTime * 0.2;
     }
   });
 
@@ -113,7 +135,7 @@ export function StationMesh({ station, position }: StationMeshProps) {
       </group>
 
       {/* Glow ring under station */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
+      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
         <ringGeometry args={[1.2, 1.6, 32]} />
         <meshStandardMaterial
           color={color}
