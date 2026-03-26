@@ -2231,7 +2231,7 @@ async def list_workers_capability():
     """List registered workers from Redis."""
     try:
         redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
-        raw = await redis_client.hgetall("laddr:workers")
+        raw = await redis_client.hgetall("laddr:workers:registry")
         workers = {}
         for k, v in raw.items():
             key = k.decode() if isinstance(k, bytes) else k
@@ -2252,7 +2252,7 @@ async def get_worker_capability(worker_id: str):
     """Get a single registered worker by ID."""
     try:
         redis_client = await message_bus._get_client()  # type: ignore[attr-defined]
-        raw = await redis_client.hget("laddr:workers", worker_id)
+        raw = await redis_client.hget("laddr:workers:registry", worker_id)
         if raw is None:
             raise HTTPException(status_code=404, detail=f"Worker '{worker_id}' not found")
         val = raw.decode() if isinstance(raw, bytes) else raw
