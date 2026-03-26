@@ -2385,8 +2385,17 @@ async def get_queue_depths():
         for level in PRIORITY_LEVELS:
             key = priority_stream_key(level)
             try:
-                length = await redis_client.xlen(key)
-                depths[level] = length
+                # Use XPENDING to get actual unprocessed count, not XLEN
+                groups = await redis_client.xinfo_groups(key)
+                if groups:
+                    # lag = messages not yet delivered to any consumer
+                    # pending = delivered but not ACKed
+                    lag = groups[0].get("lag", 0) or 0
+                    pending = groups[0].get("pending", 0) or 0
+                    depths[level] = lag + pending
+                else:
+                    # No consumer group — all messages are unprocessed
+                    depths[level] = await redis_client.xlen(key)
             except Exception:
                 depths[level] = 0
     except AttributeError:
