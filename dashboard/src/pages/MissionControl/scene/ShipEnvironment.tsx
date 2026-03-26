@@ -1,6 +1,4 @@
 // dashboard/src/pages/MissionControl/scene/ShipEnvironment.tsx
-import { useRef } from "react";
-import { Mesh } from "three";
 
 function Floor() {
   return (
