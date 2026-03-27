@@ -19,6 +19,18 @@ var connection_state: String = "disconnected"
 
 
 func _ready() -> void:
+	# Auto-detect WebSocket URL in web builds from browser location
+	if OS.has_feature("web"):
+		var js_code = """
+		(function() {
+			var proto = (window.location.protocol === 'https:') ? 'wss:' : 'ws:';
+			var port = window.location.port ? (':' + window.location.port) : '';
+			return proto + '//' + window.location.hostname + port + '/ws/mission-control';
+		})()
+		"""
+		var result = JavaScriptBridge.eval(js_code)
+		if result:
+			server_url = result
 	connect_to_server()
 
 
