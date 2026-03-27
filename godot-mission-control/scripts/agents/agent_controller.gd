@@ -112,6 +112,8 @@ func _on_job_failed(job_id: String, _reason: String) -> void:
 	target_station_id = "error_chamber"
 	_move_to_station("error_chamber")
 	_set_state(State.ERRORED)
+	if animator:
+		animator.show_emote("error")
 
 
 func _on_job_handoff(job_id: String, _from: String, to_station_id: String) -> void:
@@ -132,6 +134,8 @@ func _on_agent_changed(agent_id: String) -> void:
 			_set_state(State.BLOCKED)
 			if mover:
 				mover.stop()
+			if animator:
+				animator.show_emote("blocked")
 		"offline":
 			_set_state(State.OFFLINE)
 			if mover:

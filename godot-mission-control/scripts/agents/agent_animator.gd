@@ -24,6 +24,19 @@ var mover: Node = null  # AgentMover reference, set by controller
 var _fidget_timer: float = 0.0
 var _fidget_interval: float = 5.0  # randomized
 
+# Emotes
+var _emote_node: Label = null
+var _emote_timer: float = 0.0
+const EMOTE_DURATION = 2.0
+
+const EMOTES = {
+	"thinking": "?",
+	"success": "!",
+	"error": "X",
+	"blocked": "...",
+	"lightbulb": "*",
+}
+
 
 func _ready() -> void:
 	_fidget_interval = randf_range(3.0, 8.0)
@@ -43,11 +56,44 @@ func play_stretch() -> void:
 	_squash_type = "stretch"
 
 
+func show_emote(emote_type: String) -> void:
+	if _emote_node:
+		_emote_node.queue_free()
+
+	_emote_node = Label.new()
+	_emote_node.text = EMOTES.get(emote_type, "?")
+	_emote_node.position = Vector2(-4, -28)
+	var settings = LabelSettings.new()
+	settings.font_size = 16
+	settings.font_color = Color.WHITE
+	settings.outline_size = 2
+	settings.outline_color = Color.BLACK
+	_emote_node.label_settings = settings
+
+	if body_sprite:
+		body_sprite.add_child(_emote_node)
+	_emote_timer = EMOTE_DURATION
+
+
+func _update_emote(delta: float) -> void:
+	if _emote_timer > 0:
+		_emote_timer -= delta
+		if _emote_timer <= 0 and _emote_node:
+			_emote_node.queue_free()
+			_emote_node = null
+		elif _emote_node:
+			# Float upward and fade
+			_emote_node.position.y -= delta * 5.0
+			_emote_node.modulate.a = clampf(_emote_timer / EMOTE_DURATION, 0.0, 1.0)
+
+
 func _process(delta: float) -> void:
 	_time += delta
 
 	if not body_sprite:
 		return
+
+	_update_emote(delta)
 
 	# Update facing direction from mover velocity (8-directional, like goblin.gd)
 	if mover and mover.velocity_direction.length() > 0.1:
@@ -110,5 +156,16 @@ func _update_fidget(delta: float) -> void:
 	_fidget_timer -= delta
 	if _fidget_timer <= 0:
 		_fidget_timer = randf_range(3.0, 8.0)
-		# Tiny hop
-		play_squash()
+		# Randomly choose from: tiny hop, look-around (eyes shift), small wiggle
+		var fidget = randi() % 3
+		match fidget:
+			0:
+				# Tiny hop
+				play_squash()
+			1:
+				# Look-around: shift eyes to a random direction
+				if eyes_sprite:
+					_facing_direction = randi() % 8
+			2:
+				# Small wiggle: quick stretch then squash
+				play_stretch()
