@@ -212,6 +212,7 @@ func _on_arrived() -> void:
 			_set_state(State.WORKING)
 			if animator:
 				animator.play_squash()
+				animator.show_emote("lightbulb")
 		State.DELIVERING:
 			# Delivered job, go idle
 			current_job_id = ""
@@ -220,6 +221,7 @@ func _on_arrived() -> void:
 			_set_state(State.IDLE)
 			if animator:
 				animator.play_stretch()
+				animator.show_emote("success")
 		State.ERRORED:
 			# Dropped off at error chamber
 			current_job_id = ""
@@ -283,6 +285,9 @@ func _is_my_agent(agent_id: String) -> bool:
 
 
 func _on_click_area_input(_viewport: Node, event: InputEvent, _shape_idx: int) -> void:
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		EventBus.entity_selected.emit("agent", worker_id)
-		EventBus.camera_focus_requested.emit(global_position)
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			EventBus.entity_selected.emit("agent", worker_id)
+			EventBus.camera_focus_requested.emit(global_position)
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			EventBus.camera_follow_requested.emit("agent", worker_id)

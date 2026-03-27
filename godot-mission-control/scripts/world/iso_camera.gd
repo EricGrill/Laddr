@@ -20,6 +20,7 @@ func _ready() -> void:
 	EventBus.camera_focus_requested.connect(_on_focus_requested)
 	EventBus.camera_reset_requested.connect(_on_reset_requested)
 	EventBus.camera_follow_stopped.connect(_on_follow_stopped)
+	EventBus.camera_follow_requested.connect(_on_follow_requested)
 
 
 func _process(delta: float) -> void:
@@ -89,3 +90,11 @@ func _on_reset_requested() -> void:
 
 func _on_follow_stopped() -> void:
 	_follow_target = null
+
+
+func _on_follow_requested(entity_type: String, entity_id: String) -> void:
+	# Find the node by entity_id in the scene tree
+	# WorldBuilder maintains agent_nodes dictionary
+	var world_builder = get_tree().get_first_node_in_group("world_builder")
+	if world_builder and world_builder.agent_nodes.has(entity_id):
+		follow(world_builder.agent_nodes[entity_id])

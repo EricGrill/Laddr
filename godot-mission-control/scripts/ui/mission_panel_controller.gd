@@ -8,6 +8,7 @@ extends Control
 var _collapsed: bool = false
 var _agent_rows: Dictionary = {}  # worker_id → HBoxContainer
 var _station_rows: Dictionary = {}  # station_id → HBoxContainer
+var _filter_section: VBoxContainer = null
 
 
 func _ready() -> void:
@@ -18,6 +19,74 @@ func _ready() -> void:
 	WorldState.station_changed.connect(_on_station_changed)
 	if toggle_button:
 		toggle_button.pressed.connect(_toggle_collapse)
+	_build_filter_section()
+
+
+func _build_filter_section() -> void:
+	var vbox = $PanelContainer/VBox
+	if not vbox:
+		return
+
+	_filter_section = VBoxContainer.new()
+	_filter_section.name = "FilterSection"
+
+	var title = Label.new()
+	title.text = "Filters"
+	var title_settings = LabelSettings.new()
+	title_settings.font_size = 11
+	title_settings.font_color = Color.html("#aaaaaa")
+	title.label_settings = title_settings
+	_filter_section.add_child(title)
+
+	# Agent State filter
+	_filter_section.add_child(_make_filter_row("Agent State", "agent_state",
+		["", "idle", "running", "busy", "offline"]))
+
+	# Agent Role filter
+	_filter_section.add_child(_make_filter_row("Agent Role", "agent_role",
+		["", "worker", "coordinator", "specialist"]))
+
+	# Job State filter
+	_filter_section.add_child(_make_filter_row("Job State", "job_state",
+		["", "pending", "running", "completed", "failed"]))
+
+	# Job Priority filter
+	_filter_section.add_child(_make_filter_row("Job Priority", "job_priority",
+		["", "low", "normal", "high", "critical"]))
+
+	# Clear All button
+	var clear_btn = Button.new()
+	clear_btn.text = "Clear Filters"
+	clear_btn.pressed.connect(func(): FilterState.clear_all())
+	_filter_section.add_child(clear_btn)
+
+	# Insert at the top of the VBox (before agent list)
+	vbox.add_child(_filter_section)
+	vbox.move_child(_filter_section, 0)
+
+
+func _make_filter_row(label_text: String, category: String, options: Array) -> HBoxContainer:
+	var row = HBoxContainer.new()
+
+	var lbl = Label.new()
+	lbl.text = label_text
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var lbl_settings = LabelSettings.new()
+	lbl_settings.font_size = 11
+	lbl.label_settings = lbl_settings
+	row.add_child(lbl)
+
+	var dropdown = OptionButton.new()
+	dropdown.custom_minimum_size = Vector2(90, 0)
+	for opt in options:
+		dropdown.add_item(opt if opt != "" else "(all)")
+	dropdown.item_selected.connect(func(idx: int):
+		var val = options[idx]
+		FilterState.set_filter(category, val)
+	)
+	row.add_child(dropdown)
+
+	return row
 
 
 func _toggle_collapse() -> void:

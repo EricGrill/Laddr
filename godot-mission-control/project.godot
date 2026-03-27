@@ -15,6 +15,7 @@ run/main_scene="res://scenes/main.tscn"
 EventBus="*res://scripts/autoloads/event_bus.gd"
 WorldState="*res://scripts/autoloads/world_state.gd"
 WebSocketClient="*res://scripts/autoloads/web_socket_client.gd"
+FilterState="*res://scripts/ui/filter_state.gd"
 
 [display]
 

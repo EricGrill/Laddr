@@ -31,6 +31,7 @@ func _ready() -> void:
 	WorldState.worker_changed.connect(_on_worker_changed)
 	WorldState.worker_removed.connect(_on_worker_removed)
 	WorldState.snapshot_loaded.connect(_on_snapshot_loaded)
+	FilterState.filters_changed.connect(_on_filters_changed)
 
 
 func get_nav_graph() -> NavGraph:
@@ -122,6 +123,20 @@ func _spawn_agent(worker_id: String) -> void:
 
 	add_child(agent)
 	agent_nodes[worker_id] = agent
+
+
+func _on_filters_changed() -> void:
+	for worker_id in agent_nodes:
+		var agent_node = agent_nodes[worker_id]
+		# Find matching agent data (agent id may differ from worker_id)
+		var agent_data: Dictionary = {}
+		for agent_id in WorldState.agents:
+			var data = WorldState.agents[agent_id]
+			if data.get("workerId", agent_id) == worker_id:
+				agent_data = data
+				break
+		var passes = FilterState.passes_agent_filter(agent_data)
+		agent_node.modulate.a = 1.0 if passes else 0.3
 
 
 func _load_json(path: String) -> Dictionary:

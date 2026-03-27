@@ -12,6 +12,7 @@ var state: String = "idle"
 var _original_color: Color = Color.GRAY
 var _packet_nodes: Array = []
 const MAX_VISIBLE_PACKETS = 5
+var _last_click_time: float = 0.0
 
 @onready var label_node: Label = $Label
 @onready var sprite_node: ColorRect = $Sprite
@@ -104,5 +105,10 @@ func _update_queue_visuals() -> void:
 
 func _on_click_area_input(_viewport: Node, event: InputEvent, _shape_idx: int) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		EventBus.entity_selected.emit("station", station_id)
-		EventBus.camera_focus_requested.emit(global_position)
+		var now = Time.get_ticks_msec() / 1000.0
+		if now - _last_click_time < 0.4:
+			# Double click — zoom to fit
+			EventBus.camera_focus_requested.emit(global_position)
+		else:
+			EventBus.entity_selected.emit("station", station_id)
+		_last_click_time = now
