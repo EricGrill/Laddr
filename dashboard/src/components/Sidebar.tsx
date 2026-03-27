@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Home, Users, Play, Clock, GitBranch, Terminal, Settings, LogOut, Gauge, Columns2, Layers } from 'lucide-react';
+import { Home, Users, Play, Clock, GitBranch, Terminal, Settings, LogOut, Gauge, Columns2, Layers, Gamepad2 } from 'lucide-react';
 import { logout, getCurrentUser } from '../lib/auth';
 import { endSessionTracking } from '../lib/api';
 
@@ -15,6 +15,7 @@ const navigation = [
   { name: 'Services', href: '/services', icon: Layers },
   { name: 'Settings', href: '/settings', icon: Settings },
   { name: 'Mission Control', href: '/mission-control', icon: Gauge },
+  { name: 'Godot MC', href: '/godot-mc/', icon: Gamepad2, external: true },
 ];
 
 export default function Sidebar() {
@@ -48,21 +49,34 @@ export default function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 px-3 mt-2">
         {visibleNavigation.map((item) => (
-          <NavLink
-            key={item.href}
-            to={item.href}
-            end={item.href === '/'}
-            className={({ isActive }) =>
-              `w-full flex items-center gap-3 px-4 py-3 mb-1 rounded-lg transition-all duration-150 ${
-                isActive
-                  ? 'bg-[#1F2121] border border-[#2A2C2C] text-cyan-400 shadow-sm'
-                  : 'text-gray-400 hover:text-white hover:bg-[#252525]'
-              }`
-            }
-          >
-            <item.icon className="w-5 h-5" />
-            <span className="text-sm font-medium">{item.name}</span>
-          </NavLink>
+          'external' in item && item.external ? (
+            <a
+              key={item.href}
+              href={item.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center gap-3 px-4 py-3 mb-1 rounded-lg transition-all duration-150 text-gray-400 hover:text-white hover:bg-[#252525]"
+            >
+              <item.icon className="w-5 h-5" />
+              <span className="text-sm font-medium">{item.name}</span>
+            </a>
+          ) : (
+            <NavLink
+              key={item.href}
+              to={item.href}
+              end={item.href === '/'}
+              className={({ isActive }) =>
+                `w-full flex items-center gap-3 px-4 py-3 mb-1 rounded-lg transition-all duration-150 ${
+                  isActive
+                    ? 'bg-[#1F2121] border border-[#2A2C2C] text-cyan-400 shadow-sm'
+                    : 'text-gray-400 hover:text-white hover:bg-[#252525]'
+                }`
+              }
+            >
+              <item.icon className="w-5 h-5" />
+              <span className="text-sm font-medium">{item.name}</span>
+            </NavLink>
+          )
         ))}
       </nav>
 
