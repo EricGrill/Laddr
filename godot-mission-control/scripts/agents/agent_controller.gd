@@ -289,7 +289,16 @@ func _apply_role_visuals() -> void:
 		return
 
 	# Try worker-specific sprites first (e.g., maul, snoke, darth)
-	var worker_name = worker_id.to_lower()
+	# Use the worker's display name from backend, fallback to ID with suffix stripped
+	var worker_data = WorldState.workers.get(worker_id, {})
+	var worker_name = worker_data.get("name", worker_id).to_lower().strip_edges()
+	# Also try stripping -01, -02 etc suffix from the ID
+	if worker_name == "" or worker_name == worker_id:
+		var parts = worker_id.to_lower().split("-")
+		if parts.size() > 1 and parts[-1].is_valid_int():
+			worker_name = "-".join(parts.slice(0, parts.size() - 1))
+		else:
+			worker_name = worker_id.to_lower()
 	var found_worker_sprite = false
 	for dir in DIRECTIONS:
 		var path = WORKER_SPRITE_BASE + worker_name + "/" + worker_name + "_" + dir + ".png"
