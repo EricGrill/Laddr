@@ -117,7 +117,10 @@ class ServiceRegistry:
         self.last_discovered = datetime.now(timezone.utc).isoformat()
 
     async def refresh(self, redis) -> None:
-        """Alias for discover()."""
+        """Re-run discovery; convenience alias for ``discover()``.
+
+        Intended for periodic background refresh calls.
+        """
         await self.discover(redis)
 
     # ------------------------------------------------------------------
