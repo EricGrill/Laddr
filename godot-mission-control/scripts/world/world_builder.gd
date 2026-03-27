@@ -60,34 +60,23 @@ func _build_nav_graph(layout: Dictionary) -> void:
 
 
 func _spawn_stations(layout: Dictionary) -> void:
+	var station_scn = load("res://scenes/stations/station.tscn")
 	for station_data in layout["stations"]:
 		var grid_pos = Vector2(station_data["grid_pos"][0], station_data["grid_pos"][1])
 		var screen_pos = iso.grid_to_screen(grid_pos)
 
-		# Create placeholder station node (replaced with proper scene in Task 5)
-		var node = Node2D.new()
-		node.name = station_data["id"]
+		var node = station_scn.instantiate()
 		node.position = screen_pos
 
-		var label = Label.new()
-		label.text = station_data["label"]
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.position = Vector2(-40, -30)
-		var label_settings = LabelSettings.new()
-		label_settings.font_size = 12
-		label_settings.font_color = Color.WHITE
-		label_settings.outline_size = 2
-		label_settings.outline_color = Color.BLACK
-		label.label_settings = label_settings
-		node.add_child(label)
-
 		var type_info = station_types.get(station_data["type"], {})
-		var color_hex = type_info.get("color", "#888888")
-		var draw_node = ColorRect.new()
-		draw_node.color = Color.html(color_hex)
-		draw_node.size = Vector2(48, 32)
-		draw_node.position = Vector2(-24, -16)
-		node.add_child(draw_node)
+		var color = Color.html(type_info.get("color", "#888888"))
+		node.setup(
+			station_data["id"],
+			station_data["type"],
+			station_data["label"],
+			station_data["capacity"],
+			color
+		)
 
 		add_child(node)
 		station_nodes[station_data["id"]] = node
