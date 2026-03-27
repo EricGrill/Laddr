@@ -6,23 +6,27 @@ var job_id: String = ""
 var priority: String = "normal"
 var state: String = "queued"
 
-@onready var body: ColorRect = $Body
-@onready var priority_glow: ColorRect = $PriorityGlow
+@onready var body: Sprite2D = $Body
 
 var _time: float = 0.0
 
-const PRIORITY_COLORS = {
-	"low": Color(0.5, 0.5, 0.5, 1),
-	"normal": Color(0.35, 0.6, 0.85, 1),
-	"high": Color(0.95, 0.6, 0.2, 1),
-	"critical": Color(0.9, 0.2, 0.2, 1),
-}
+const PACKET_SPRITE_BASE = "res://assets/sprites/packets/packet_"
+
+# Preload packet textures
+var _packet_textures: Dictionary = {}
+
+
+func _ready() -> void:
+	for pri in ["low", "normal", "high", "critical"]:
+		var tex = load(PACKET_SPRITE_BASE + pri + ".png")
+		if tex:
+			_packet_textures[pri] = tex
 
 
 func setup(id: String, pri: String) -> void:
 	job_id = id
 	priority = pri
-	_update_color()
+	_update_sprite()
 
 
 func set_state(new_state: String) -> void:
@@ -30,15 +34,18 @@ func set_state(new_state: String) -> void:
 	match state:
 		"completed":
 			if body:
-				body.color = Color.html("#82e0aa")  # green
+				body.modulate = Color(0.5, 1.0, 0.7, 1)  # green tint
 		"failed":
 			if body:
-				body.color = Color.html("#e74c3c")  # red
+				body.modulate = Color(1.3, 0.5, 0.5, 1)  # red tint
 
 
-func _update_color() -> void:
+func _update_sprite() -> void:
 	if body:
-		body.color = PRIORITY_COLORS.get(priority, PRIORITY_COLORS["normal"])
+		if _packet_textures.has(priority):
+			body.texture = _packet_textures[priority]
+		elif _packet_textures.has("normal"):
+			body.texture = _packet_textures["normal"]
 
 
 func _process(delta: float) -> void:

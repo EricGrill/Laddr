@@ -1,7 +1,7 @@
 extends Node
-## Handles blob charm: 8-directional wobble walk, squash/stretch, idle bob, emotes.
+## Handles agent animation: directional sprite swapping, wobble walk,
+## squash/stretch, idle bob, emotes.
 ## Reads velocity_direction from sibling AgentMover to determine facing.
-## Inspired by Godot isometric demo's 8-directional animation system.
 
 @export var wobble_amplitude: float = 3.0
 @export var wobble_speed: float = 8.0
@@ -13,12 +13,15 @@ var _time: float = 0.0
 var _is_walking: bool = false
 var _squash_timer: float = 0.0
 var _squash_type: String = ""  # "squash" or "stretch"
-var _facing_direction: int = 0  # 0-7, like goblin.gd (S, SW, W, NW, N, NE, E, SE)
+var _facing_direction: int = 0  # 0-7 (S, SW, W, NW, N, NE, E, SE)
 
-var body_sprite: Node2D  # Set by agent controller
-var shadow_sprite: Node2D
-var eyes_sprite: Node2D
+var body_sprite: Node2D  # Body node, set by agent controller
+var agent_sprite: Sprite2D  # The actual sprite, set by agent controller
 var mover: Node = null  # AgentMover reference, set by controller
+
+# Role sprite textures: "front", "iso_left", "iso_right"
+var _role_textures: Dictionary = {}
+var _current_sprite_key: String = "front"
 
 # Idle fidget
 var _fidget_timer: float = 0.0
@@ -40,6 +43,19 @@ const EMOTES = {
 	"lightbulb": "*",
 }
 
+# Direction to sprite key mapping
+# S=0, SW=1, W=2, NW=3, N=4, NE=5, E=6, SE=7
+const DIR_TO_SPRITE = {
+	0: "front",      # S
+	1: "iso_left",    # SW
+	2: "iso_left",    # W
+	3: "iso_left",    # NW
+	4: "front",       # N
+	5: "iso_right",   # NE
+	6: "iso_right",   # E
+	7: "iso_right",   # SE
+}
+
 
 func _ready() -> void:
 	_fidget_interval = randf_range(3.0, 8.0)
@@ -48,6 +64,10 @@ func _ready() -> void:
 
 func set_walking(walking: bool) -> void:
 	_is_walking = walking
+
+
+func set_role_textures(textures: Dictionary) -> void:
+	_role_textures = textures
 
 
 func play_squash() -> void:
@@ -66,7 +86,7 @@ func show_emote(emote_type: String) -> void:
 
 	_emote_node = Label.new()
 	_emote_node.text = EMOTES.get(emote_type, "?")
-	_emote_node.position = Vector2(-4, -28)
+	_emote_node.position = Vector2(-4, -36)
 	var settings = LabelSettings.new()
 	settings.font_size = 16
 	settings.font_color = Color.WHITE
@@ -113,16 +133,15 @@ func _process(delta: float) -> void:
 
 	_update_emote(delta)
 
-	# Update facing direction from mover velocity (8-directional, like goblin.gd)
+	# Update facing direction from mover velocity (8-directional)
 	if mover and mover.velocity_direction.length() > 0.1:
 		var angle = mover.velocity_direction.angle()
-		# Divide into 8 slices of 45 degrees each, offset by 22.5 degrees
 		_facing_direction = int(round(angle / (PI / 4))) % 8
 		if _facing_direction < 0:
 			_facing_direction += 8
 
-	# Update eye positions based on facing direction (simulate looking)
-	_update_eye_direction()
+	# Swap sprite texture based on facing direction
+	_update_sprite_direction()
 
 	var offset_y = 0.0
 	var rotation_z = 0.0
@@ -151,39 +170,25 @@ func _process(delta: float) -> void:
 	body_sprite.scale = scale_mod
 
 
-func _update_eye_direction() -> void:
-	if not eyes_sprite:
+func _update_sprite_direction() -> void:
+	if _role_textures.is_empty() or not agent_sprite:
 		return
-	# Shift eyes in the direction the blob is facing
-	# 8 directions: S=0, SW=1, W=2, NW=3, N=4, NE=5, E=6, SE=7
-	var offsets = [
-		Vector2(0, 1),    # S
-		Vector2(-1, 1),   # SW
-		Vector2(-1, 0),   # W
-		Vector2(-1, -1),  # NW
-		Vector2(0, -1),   # N
-		Vector2(1, -1),   # NE
-		Vector2(1, 0),    # E
-		Vector2(1, 1),    # SE
-	]
-	var offset = offsets[_facing_direction] * 1.5
-	eyes_sprite.position = offset
+	var sprite_key = DIR_TO_SPRITE.get(_facing_direction, "front")
+	if sprite_key != _current_sprite_key and _role_textures.has(sprite_key):
+		agent_sprite.texture = _role_textures[sprite_key]
+		_current_sprite_key = sprite_key
 
 
 func _update_fidget(delta: float) -> void:
 	_fidget_timer -= delta
 	if _fidget_timer <= 0:
 		_fidget_timer = randf_range(3.0, 8.0)
-		# Randomly choose from: tiny hop, look-around (eyes shift), small wiggle
 		var fidget = randi() % 3
 		match fidget:
 			0:
-				# Tiny hop
 				play_squash()
 			1:
-				# Look-around: shift eyes to a random direction
-				if eyes_sprite:
-					_facing_direction = randi() % 8
+				# Look-around: change facing to random direction
+				_facing_direction = randi() % 8
 			2:
-				# Small wiggle: quick stretch then squash
 				play_stretch()

@@ -15,29 +15,34 @@ var role: String = ""
 @onready var mover: Node = $AgentMover
 @onready var animator: Node = $AgentAnimator
 @onready var body: Node2D = $Body
-@onready var eyes: Node2D = $Body/Eyes
+@onready var agent_sprite: Sprite2D = $Body/AgentSprite
 @onready var label_node: Label = $Label
-@onready var job_packet_visual: Node2D = $Body/JobPacket
+@onready var job_packet_visual: Sprite2D = $Body/JobPacket
 @onready var click_area: Area2D = $ClickArea
 
 var _nav_graph: NavGraph
 var _pickup_timer: float = 0.0
 var _pickup_duration: float = 0.5
 
+# Preloaded sprite textures per role
+var _sprite_textures: Dictionary = {}  # "role_direction" -> Texture2D
+
+const SPRITE_BASE = "res://assets/sprites/agents/"
+const ROLES = ["router", "researcher", "coder", "reviewer", "deployer", "supervisor"]
+const DIRECTIONS = ["front", "iso_left", "iso_right"]
+
 
 func setup(id: String, nav: NavGraph, color: Color) -> void:
 	worker_id = id
 	_nav_graph = nav
 	agent_color = color
-	if body and body.has_method("set_color"):
-		body.set_color(color)
 
 
 func _ready() -> void:
 	# Wire animator
 	if animator:
 		animator.body_sprite = body
-		animator.eyes_sprite = eyes
+		animator.agent_sprite = agent_sprite
 		animator.mover = mover
 
 	# Wire mover
@@ -90,6 +95,8 @@ func _on_job_assigned(job_id: String, agent_id: String, station_id: String) -> v
 		return
 	current_job_id = job_id
 	target_station_id = station_id
+	# Update carried packet sprite based on job priority
+	_update_carried_packet()
 	# Move to the station where the job is
 	_move_to_station(station_id)
 	_set_state(State.MOVING)
@@ -151,6 +158,7 @@ func _on_snapshot_loaded() -> void:
 			var job_id = data.get("currentJobId", "")
 			if job_id != "":
 				current_job_id = job_id
+				_update_carried_packet()
 				# If agent has a job and station, go to working state
 				var station = data.get("currentStationId", "")
 				if station != "":
@@ -161,46 +169,34 @@ func _on_snapshot_loaded() -> void:
 
 
 func _apply_role_visuals() -> void:
-	# Add visual accessory based on role
-	var accessory = ColorRect.new()
-	accessory.size = Vector2(8, 4)
-	accessory.position = Vector2(-4, -14)
+	if not agent_sprite or role == "":
+		return
+	# Load sprite textures for this role
+	for dir in DIRECTIONS:
+		var path = SPRITE_BASE + role + "/" + role + "_" + dir + ".png"
+		var tex = load(path)
+		if tex:
+			_sprite_textures[dir] = tex
+	# Set initial front-facing texture
+	if _sprite_textures.has("front"):
+		agent_sprite.texture = _sprite_textures["front"]
+	# Supervisor is slightly larger
+	if role == "supervisor":
+		agent_sprite.scale = Vector2(0.22, 0.22)
+	# Pass textures to animator for direction switching
+	if animator:
+		animator.set_role_textures(_sprite_textures)
 
-	match role:
-		"router":
-			accessory.color = Color.html("#5b9bd5")  # blue visor
-			accessory.size = Vector2(16, 3)
-			accessory.position = Vector2(-8, -6)
-		"researcher":
-			accessory.color = Color.html("#85c1e9")  # glasses
-			accessory.size = Vector2(12, 3)
-			accessory.position = Vector2(-6, -4)
-		"coder":
-			accessory.color = Color.html("#333333")  # headphones
-			accessory.size = Vector2(18, 3)
-			accessory.position = Vector2(-9, -12)
-		"reviewer":
-			accessory.color = Color.html("#a8d8b9")  # clipboard
-			accessory.size = Vector2(6, 8)
-			accessory.position = Vector2(10, -6)
-		"deployer":
-			accessory.color = Color.html("#82e0aa")  # tool belt
-			accessory.size = Vector2(16, 2)
-			accessory.position = Vector2(-8, 4)
-		"supervisor":
-			accessory.color = Color.html("#f5b041")  # tiny hat
-			accessory.size = Vector2(10, 4)
-			accessory.position = Vector2(-5, -14)
-			# Also make supervisor slightly larger
-			if body:
-				body.scale = Vector2(1.2, 1.2)
-		_:
-			accessory.queue_free()
-			return
 
-	accessory.name = "Accessory"
-	if body:
-		body.add_child(accessory)
+func _update_carried_packet() -> void:
+	if not job_packet_visual:
+		return
+	var job_data = WorldState.jobs.get(current_job_id, {})
+	var pri = job_data.get("priority", "normal")
+	var packet_path = "res://assets/sprites/packets/packet_" + pri + ".png"
+	var tex = load(packet_path)
+	if tex:
+		job_packet_visual.texture = tex
 
 
 func _on_arrived() -> void:

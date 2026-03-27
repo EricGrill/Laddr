@@ -15,8 +15,10 @@ var _packet_pool: Array = []
 const MAX_VISIBLE_PACKETS = 5
 var _last_click_time: float = 0.0
 
+const STATION_SPRITE_BASE = "res://assets/sprites/stations/"
+
 @onready var label_node: Label = $Label
-@onready var sprite_node: ColorRect = $Sprite
+@onready var sprite_node: Sprite2D = $Sprite
 @onready var queue_label: Label = $QueueLabel
 @onready var click_area: Area2D = $ClickArea
 
@@ -30,8 +32,15 @@ func setup(id: String, type: String, lbl: String, cap: int, color: Color) -> voi
 
 	if label_node:
 		label_node.text = lbl
+
+	# Load station sprite texture
 	if sprite_node:
-		sprite_node.color = color
+		var tex_path = STATION_SPRITE_BASE + type + ".png"
+		var tex = load(tex_path)
+		if tex:
+			sprite_node.texture = tex
+		else:
+			push_warning("Station sprite not found: %s" % tex_path)
 
 
 func _ready() -> void:
@@ -66,15 +75,15 @@ func _update_from_data(data: Dictionary) -> void:
 	if queue_label:
 		queue_label.text = str(queue_depth) if queue_depth > 0 else ""
 
-	# Saturation color feedback
+	# Saturation feedback via modulate (tint the sprite)
 	if sprite_node:
 		var saturation_ratio = float(queue_depth) / max(capacity, 1)
 		if saturation_ratio > 0.8:
-			sprite_node.color = Color.html("#e74c3c")  # red
+			sprite_node.modulate = Color(1.3, 0.7, 0.7, 1)  # red tint
 		elif saturation_ratio > 0.5:
-			sprite_node.color = Color.html("#f5b041")  # yellow
+			sprite_node.modulate = Color(1.2, 1.1, 0.7, 1)  # yellow tint
 		else:
-			sprite_node.color = _original_color
+			sprite_node.modulate = Color.WHITE  # normal
 
 	var effects = get_node_or_null("StationEffects")
 	if effects:
@@ -113,7 +122,7 @@ func _update_queue_visuals() -> void:
 		if not pkt.is_inside_tree():
 			add_child(pkt)
 		pkt.setup(job_id, job_data.get("priority", "normal"))
-		pkt.position = Vector2(-20 + i * 10, 15)
+		pkt.position = Vector2(-20 + i * 10, 20)
 		_packet_nodes.append(pkt)
 
 

@@ -5,11 +5,11 @@
 [ext_resource type="Script" path="res://scripts/agents/agent_animator.gd" id="3"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_1"]
-size = Vector2(30, 20)
+size = Vector2(40, 30)
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_1"]
-radius = 7.0
-height = 14.0
+radius = 10.0
+height = 20.0
 
 [node name="BlobAgent" type="CharacterBody2D"]
 script = ExtResource("1")
@@ -22,57 +22,14 @@ script = ExtResource("3")
 
 [node name="Body" type="Node2D" parent="."]
 
-[node name="Shadow" type="ColorRect" parent="Body"]
-offset_left = -12.0
-offset_top = 4.0
-offset_right = 12.0
-offset_bottom = 8.0
-color = Color(0, 0, 0, 0.2)
+[node name="AgentSprite" type="Sprite2D" parent="Body"]
+scale = Vector2(0.1875, 0.1875)
+position = Vector2(0, -12)
 
-[node name="BlobBody" type="ColorRect" parent="Body"]
-offset_left = -14.0
-offset_top = -10.0
-offset_right = 14.0
-offset_bottom = 8.0
-color = Color(0.831, 0.514, 0.42, 1)
-
-[node name="Eyes" type="Node2D" parent="Body"]
-
-[node name="LeftEye" type="ColorRect" parent="Body/Eyes"]
-offset_left = -7.0
-offset_top = -5.0
-offset_right = -2.0
-offset_bottom = 1.0
-color = Color(1, 1, 1, 1)
-
-[node name="LeftPupil" type="ColorRect" parent="Body/Eyes/LeftEye"]
-offset_left = 1.0
-offset_top = 1.5
-offset_right = 4.0
-offset_bottom = 4.5
-color = Color(0.1, 0.1, 0.1, 1)
-
-[node name="RightEye" type="ColorRect" parent="Body/Eyes"]
-offset_left = 2.0
-offset_top = -5.0
-offset_right = 7.0
-offset_bottom = 1.0
-color = Color(1, 1, 1, 1)
-
-[node name="RightPupil" type="ColorRect" parent="Body/Eyes/RightEye"]
-offset_left = 1.0
-offset_top = 1.5
-offset_right = 4.0
-offset_bottom = 4.5
-color = Color(0.1, 0.1, 0.1, 1)
-
-[node name="JobPacket" type="ColorRect" parent="Body"]
+[node name="JobPacket" type="Sprite2D" parent="Body"]
 visible = false
-offset_left = -6.0
-offset_top = -20.0
-offset_right = 6.0
-offset_bottom = -14.0
-color = Color(0.35, 0.6, 0.85, 1)
+scale = Vector2(0.0625, 0.0625)
+position = Vector2(0, -32)
 
 [node name="Label" type="Label" parent="."]
 offset_left = -30.0
