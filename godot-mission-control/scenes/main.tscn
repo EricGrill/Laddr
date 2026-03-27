@@ -1,10 +1,11 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/world_builder.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/world/iso_camera.gd" id="2"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="3"]
 [ext_resource type="PackedScene" path="res://scenes/ui/inspector.tscn" id="4"]
 [ext_resource type="PackedScene" path="res://scenes/ui/mission_panel.tscn" id="5"]
+[ext_resource type="PackedScene" path="res://scenes/ui/job_board.tscn" id="6"]
 
 [node name="Main" type="Node2D"]
 
@@ -26,3 +27,5 @@ layer = 10
 [node name="Inspector" parent="UILayer" instance=ExtResource("4")]
 
 [node name="MissionPanel" parent="UILayer" instance=ExtResource("5")]
+
+[node name="JobBoard" parent="UILayer" instance=ExtResource("6")]

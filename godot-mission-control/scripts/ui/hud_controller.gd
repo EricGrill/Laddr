@@ -60,15 +60,22 @@ func _on_snapshot_loaded() -> void:
 func _update_metrics() -> void:
 	if not metrics_label:
 		return
-	var m = WorldState.metrics
-	var total_jobs = m.get("totalJobs", WorldState.jobs.size())
+	var queued = 0
+	var processing = 0
+	var completed = 0
+	var failed = 0
+	for jid in WorldState.jobs:
+		var state = WorldState.jobs[jid].get("state", "queued")
+		match state:
+			"queued": queued += 1
+			"processing": processing += 1
+			"completed": completed += 1
+			"failed": failed += 1
 	var workers_online = WorldState.workers.size()
-	var errors = m.get("errorCount", 0)
 	var busy_workers = 0
 	for wid in WorldState.workers:
-		var w = WorldState.workers[wid]
-		if w.get("activeJobs", 0) > 0:
+		if WorldState.workers[wid].get("activeJobs", 0) > 0:
 			busy_workers += 1
-	metrics_label.text = "Jobs: %d | Workers: %d/%d busy | Errors: %d" % [
-		total_jobs, busy_workers, workers_online, errors
+	metrics_label.text = "Q:%d  Run:%d  Done:%d  Fail:%d | Workers: %d/%d" % [
+		queued, processing, completed, failed, busy_workers, workers_online
 	]

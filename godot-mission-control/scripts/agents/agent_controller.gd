@@ -143,45 +143,30 @@ func _update_status_card() -> void:
 
 	if is_busy:
 		status_card.visible = true
-		var lines = []
 
-		# Action line
-		if current_state == State.WORKING:
-			lines.append("PROCESSING")
-		elif current_state == State.CARRYING:
-			lines.append("CARRYING JOB")
-		elif current_state == State.DELIVERING:
-			lines.append("DELIVERING")
-		elif active > 0:
-			lines.append("BUSY - %d job%s" % [active, "s" if active > 1 else ""])
-
-		# Extract model names from capabilities (can be strings or dicts)
-		var models = []
+		# Extract primary model name from capabilities
+		var model_name = ""
 		for cap in caps:
 			var cap_str = ""
 			if cap is Dictionary:
-				# Could be {"id": "openai-gpt-...", "name": "GPT-4o"}
-				cap_str = str(cap.get("name", cap.get("id", "")))
+				cap_str = str(cap.get("id", ""))
 			else:
 				cap_str = str(cap)
 			var c = cap_str.to_lower()
+			if "embed" in c:
+				continue  # Skip embedding models
 			if "gpt" in c or "claude" in c or "llama" in c or "gemini" in c or "mistral" in c or "qwen" in c or "deepseek" in c:
-				# Clean up the model name
-				var clean = cap_str.replace("openai-", "").replace("anthropic-", "")
-				if clean.length() > 30:
-					clean = clean.left(30)
-				if clean not in models:
-					models.append(clean)
-		if not models.is_empty():
-			lines.append("Model: %s" % models[0])
-			if models.size() > 1:
-				lines.append("  +%d more" % (models.size() - 1))
+				model_name = cap_str.get_file().replace("openai-", "")
+				if model_name.length() > 20:
+					model_name = model_name.left(20)
+				break
 
-		# Active jobs count
-		if active > 0:
-			lines.append("Active: %d jobs" % active)
+		# Short card: model + job count
+		if model_name != "":
+			status_text.text = "%s\n%d job%s" % [model_name, active, "s" if active != 1 else ""]
+		else:
+			status_text.text = "%d job%s" % [active, "s" if active != 1 else ""]
 
-		status_text.text = "\n".join(lines)
 		status_card.position.y = -75 + sin(Time.get_ticks_msec() / 1000.0 * 1.5) * 3.0
 	else:
 		if status_card.visible and current_state == State.IDLE:
