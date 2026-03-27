@@ -23,13 +23,13 @@ script = ExtResource("3")
 [node name="Body" type="Node2D" parent="."]
 
 [node name="AgentSprite" type="Sprite2D" parent="Body"]
-scale = Vector2(0.1875, 0.1875)
-position = Vector2(0, -12)
+scale = Vector2(0.45, 0.45)
+position = Vector2(0, -20)
 
 [node name="JobPacket" type="Sprite2D" parent="Body"]
 visible = false
-scale = Vector2(0.0625, 0.0625)
-position = Vector2(0, -32)
+scale = Vector2(0.15, 0.15)
+position = Vector2(0, -50)
 
 [node name="Label" type="Label" parent="."]
 offset_left = -30.0

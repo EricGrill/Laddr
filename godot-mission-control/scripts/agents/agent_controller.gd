@@ -182,7 +182,7 @@ func _apply_role_visuals() -> void:
 		agent_sprite.texture = _sprite_textures["front"]
 	# Supervisor is slightly larger
 	if role == "supervisor":
-		agent_sprite.scale = Vector2(0.22, 0.22)
+		agent_sprite.scale = Vector2(0.55, 0.55)
 	# Pass textures to animator for direction switching
 	if animator:
 		animator.set_role_textures(_sprite_textures)
