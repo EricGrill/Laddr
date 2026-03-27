@@ -10,8 +10,8 @@ import { useEntityStore } from '../stores/entityStore';
 import { useUIStore } from '../stores/uiStore';
 import type { StationType, StationState, MCWorker, MCJob } from '../types';
 
-const CANVAS_W = 1060;
-const CANVAS_H = 780;
+const CANVAS_W = 1600;
+const CANVAS_H = 900;
 const BG_COLOR = 0x1a2230;
 
 function workerPosition(
@@ -253,7 +253,7 @@ export function PixiCanvas() {
       const activeJobsText = new Text({
         text: 'ACTIVE JOBS: 0',
         style: new TextStyle({
-          fontSize: 14,
+          fontSize: 20,
           fill: '#63d7e6',
           fontFamily: 'Arial, Helvetica, sans-serif',
           fontWeight: 'bold',
@@ -266,7 +266,7 @@ export function PixiCanvas() {
       const workersText = new Text({
         text: 'WORKERS: 0 online',
         style: new TextStyle({
-          fontSize: 11,
+          fontSize: 15,
           fill: '#cccccc',
           fontFamily: 'Arial, Helvetica, sans-serif',
         }),
@@ -278,7 +278,7 @@ export function PixiCanvas() {
       const queueDepthText = new Text({
         text: 'QUEUE DEPTH: 0',
         style: new TextStyle({
-          fontSize: 11,
+          fontSize: 15,
           fill: '#cccccc',
           fontFamily: 'Arial, Helvetica, sans-serif',
         }),

@@ -68,7 +68,7 @@ export function createPacket(
   const jobNameText = new Text({
     text: displayName,
     style: new TextStyle({
-      fontSize: 7,
+      fontSize: 10,
       fill: '#cccccc',
       fontFamily: 'Arial, Helvetica, sans-serif',
     }),
@@ -82,7 +82,7 @@ export function createPacket(
   const priorityLabel = new Text({
     text: priority === 'critical' ? 'CRIT' : priority === 'high' ? 'HI' : '',
     style: new TextStyle({
-      fontSize: 6,
+      fontSize: 9,
       fill: priority === 'critical' ? '#e35b5b' : '#f2a65a',
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontWeight: 'bold',
@@ -171,7 +171,7 @@ function redrawPacket(refs: PacketRefs) {
   // Card (queued)
   refs.cardGfx.clear();
   if (isQueued) {
-    const w = 24, h = 18;
+    const w = 36, h = 24;
     refs.cardGfx.roundRect(-w / 2, -h / 2, w, h, 2);
     refs.cardGfx.fill({ color: 0x2c313a, alpha: 0.8 });
     refs.cardGfx.stroke({ color: typeColor, width: 1, alpha: 0.6 });
@@ -191,7 +191,7 @@ function redrawPacket(refs: PacketRefs) {
   // Chip (processing)
   refs.chipGfx.clear();
   if (isProcessing) {
-    const w = 24, h = 16;
+    const w = 36, h = 22;
     refs.chipGfx.roundRect(-w / 2, -h / 2, w, h, 2);
     refs.chipGfx.fill({ color: 0x2c313a, alpha: 0.9 });
     refs.chipGfx.stroke({ color: typeColor, width: 1, alpha: 0.7 });

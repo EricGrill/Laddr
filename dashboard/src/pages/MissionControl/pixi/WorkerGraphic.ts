@@ -56,7 +56,7 @@ export function createWorker(id: string, roleColor: number): Container {
   const nameText = new Text({
     text: shortId,
     style: new TextStyle({
-      fontSize: 8,
+      fontSize: 11,
       fill: '#cccccc',
       fontFamily: 'Arial, Helvetica, sans-serif',
     }),
@@ -70,7 +70,7 @@ export function createWorker(id: string, roleColor: number): Container {
   const statusText = new Text({
     text: 'online',
     style: new TextStyle({
-      fontSize: 7,
+      fontSize: 10,
       fill: '#4caf50',
       fontFamily: 'Arial, Helvetica, sans-serif',
     }),
@@ -88,7 +88,7 @@ export function createWorker(id: string, roleColor: number): Container {
   const jobBadgeText = new Text({
     text: '',
     style: new TextStyle({
-      fontSize: 7,
+      fontSize: 10,
       fill: '#ffffff',
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontWeight: 'bold',

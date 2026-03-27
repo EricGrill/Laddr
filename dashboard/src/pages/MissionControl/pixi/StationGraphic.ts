@@ -30,15 +30,15 @@ export const STATION_POSITIONS: Record<
   string,
   { x: number; y: number; type: StationType; label: string }
 > = {
-  intake: { x: 120, y: 180, type: 'intake', label: 'Incoming Orders' },
-  dispatcher: { x: 440, y: 320, type: 'dispatcher', label: 'Routing Core' },
-  llm: { x: 220, y: 480, type: 'llm', label: 'Science/Research' },
-  code: { x: 660, y: 480, type: 'code', label: 'Systems Engineering' },
-  tool: { x: 120, y: 600, type: 'tool', label: 'Recon/Comms' },
-  output: { x: 780, y: 320, type: 'output', label: 'Deploy Bay' },
-  supervisor: { x: 660, y: 140, type: 'supervisor', label: 'Review/Verification' },
-  'command-oversight': { x: 900, y: 140, type: 'supervisor', label: 'Command Oversight' },
-  error: { x: 660, y: 620, type: 'error', label: 'Anomaly Containment' },
+  intake: { x: 200, y: 200, type: 'intake', label: 'Incoming Orders' },
+  dispatcher: { x: 650, y: 400, type: 'dispatcher', label: 'Dispatch Hub' },
+  llm: { x: 350, y: 600, type: 'llm', label: 'Science/Research' },
+  code: { x: 950, y: 600, type: 'code', label: 'Systems Engineering' },
+  tool: { x: 200, y: 750, type: 'tool', label: 'Recon/Comms' },
+  output: { x: 1150, y: 400, type: 'output', label: 'Output Dock' },
+  supervisor: { x: 950, y: 170, type: 'supervisor', label: 'Review/Verification' },
+  'command-oversight': { x: 1350, y: 170, type: 'supervisor', label: 'Command Deck' },
+  error: { x: 950, y: 780, type: 'error', label: 'Error Chamber' },
 };
 
 export interface StationConfig {
@@ -94,8 +94,8 @@ const STATION_REFS = new WeakMap<Container, StationRefs>();
 export function createStation(config: StationConfig, onClick?: (id: string) => void): Container {
   const accent = ACCENT_COLORS[config.type];
   const isDispatcher = config.type === 'dispatcher';
-  const platformW = isDispatcher ? 120 : 100;
-  const platformH = isDispatcher ? 90 : 70;
+  const platformW = isDispatcher ? 160 : 130;
+  const platformH = isDispatcher ? 110 : 90;
   const halfW = platformW / 2;
   const halfH = platformH / 2;
 
@@ -143,7 +143,7 @@ export function createStation(config: StationConfig, onClick?: (id: string) => v
   const queueCountText = new Text({
     text: config.queueDepth > 0 ? String(config.queueDepth) : '',
     style: new TextStyle({
-      fontSize: 18,
+      fontSize: 24,
       fill: '#ffffff',
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontWeight: 'bold',
@@ -158,7 +158,7 @@ export function createStation(config: StationConfig, onClick?: (id: string) => v
   const labelText = new Text({
     text: config.label,
     style: new TextStyle({
-      fontSize: 13,
+      fontSize: 16,
       fill: '#D9D7D1',
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontWeight: 'bold',
