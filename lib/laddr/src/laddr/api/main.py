@@ -2387,7 +2387,12 @@ async def complete_prompt(prompt_id: str, request: Request):
         body = await request.json()
         status = body.get("status", "completed")
         outputs = body.get("outputs", {})
-        database.save_prompt_result(prompt_id, outputs=outputs, status=status)
+        terminal = {"completed", "failed", "error", "canceled"}
+        if status in terminal:
+            database.save_prompt_result(prompt_id, outputs=outputs, status=status)
+        else:
+            # Non-terminal (e.g., "running") — just update status, don't set completed_at
+            database.update_prompt_status(prompt_id, status)
         return {"ok": True, "prompt_id": prompt_id, "status": status}
     except Exception as e:
         logger.warning("Failed to complete prompt %s: %s", prompt_id, e)

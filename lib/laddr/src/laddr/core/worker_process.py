@@ -373,6 +373,21 @@ class WorkerProcess:
 
         logger.info("Job %s detected as task_type=%s", job_id, task_type)
         self._active_jobs += 1
+
+        # Mark job as running in the database
+        api_url = self.config.get("server", {}).get("api_url")
+        if api_url:
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=3) as client:
+                    await client.post(
+                        f"{api_url}/api/prompts/{job_id}/complete",
+                        json={"status": "running", "outputs": {}},
+                        headers={"X-API-Key": "internal"},
+                    )
+            except Exception:
+                pass  # non-critical
+
         try:
             if task_type == "script":
                 result = await _execute_script_job(job)
