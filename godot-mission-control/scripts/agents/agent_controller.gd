@@ -143,41 +143,23 @@ func _update_status_card() -> void:
 		status_card.visible = true
 		var lines = []
 
-		# Show what they're doing
 		if current_state == State.WORKING:
-			lines.append("[color=#5ce0d8]PROCESSING[/color]")
+			lines.append("PROCESSING")
 		elif current_state == State.CARRYING:
-			lines.append("[color=#f5b041]CARRYING JOB[/color]")
+			lines.append("CARRYING JOB")
 		elif current_state == State.DELIVERING:
-			lines.append("[color=#82e0aa]DELIVERING[/color]")
+			lines.append("DELIVERING")
 		elif active > 0:
-			lines.append("[color=#5ce0d8]%d active job%s[/color]" % [active, "s" if active > 1 else ""])
+			lines.append("%d active" % active)
 
-		# Show model/capability being used
-		if not caps.is_empty():
-			var model = ""
-			for cap in caps:
-				var c = str(cap).to_lower()
-				if "gpt" in c or "claude" in c or "llama" in c or "gemini" in c or "mistral" in c:
-					model = str(cap)
-					break
-			if model != "":
-				lines.append(model.left(24))
-
-		# Show a recent job type if available
-		if active > 0:
-			# Find a processing job
-			for jid in WorldState.jobs:
-				var job = WorldState.jobs[jid]
-				if job.get("state", "") == "processing":
-					var jtype = job.get("type", "")
-					if jtype != "":
-						lines.append(str(jtype).left(22))
-					break
+		# Show model being used
+		for cap in caps:
+			var c = str(cap).to_lower()
+			if "gpt" in c or "claude" in c or "llama" in c or "gemini" in c or "mistral" in c:
+				lines.append(str(cap).left(24))
+				break
 
 		status_text.text = "\n".join(lines)
-
-		# Gentle float animation
 		status_card.position.y = -70 + sin(Time.get_ticks_msec() / 1000.0 * 1.5) * 3.0
 	else:
 		if status_card.visible and current_state == State.IDLE:
