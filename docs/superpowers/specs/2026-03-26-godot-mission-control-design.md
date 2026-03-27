@@ -328,9 +328,12 @@ State transitions driven entirely by WorldState signals (including derived signa
 
 ### agent_mover.gd — Path Following
 
+- Agent root is **CharacterBody2D** (following [Godot isometric demo](https://github.com/godotengine/godot-demo-projects/tree/master/2d/isometric))
+- Uses `move_and_slide()` for collision-aware movement
+- Isometric compensation: Y component of velocity halved (like demo's goblin.gd)
 - Receives ordered waypoint list from NavGraph
-- Moves between waypoints using isometric-aware interpolation
 - Speed varies by state: normal walk, hurried carry (high priority), slow blocked shuffle
+- Exposes `velocity_direction` for 8-directional animation (angle divided into 8 slices)
 - Arrives within threshold → emits `arrived` signal → controller advances state
 
 ### Claude Blob Visual Spec
