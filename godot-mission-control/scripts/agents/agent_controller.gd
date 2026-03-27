@@ -153,6 +153,50 @@ func _on_snapshot_loaded() -> void:
 					_move_to_station(station)
 					_set_state(State.CARRYING)
 			break
+	_apply_role_visuals()
+
+
+func _apply_role_visuals() -> void:
+	# Add visual accessory based on role
+	var accessory = ColorRect.new()
+	accessory.size = Vector2(8, 4)
+	accessory.position = Vector2(-4, -14)
+
+	match role:
+		"router":
+			accessory.color = Color.html("#5b9bd5")  # blue visor
+			accessory.size = Vector2(16, 3)
+			accessory.position = Vector2(-8, -6)
+		"researcher":
+			accessory.color = Color.html("#85c1e9")  # glasses
+			accessory.size = Vector2(12, 3)
+			accessory.position = Vector2(-6, -4)
+		"coder":
+			accessory.color = Color.html("#333333")  # headphones
+			accessory.size = Vector2(18, 3)
+			accessory.position = Vector2(-9, -12)
+		"reviewer":
+			accessory.color = Color.html("#a8d8b9")  # clipboard
+			accessory.size = Vector2(6, 8)
+			accessory.position = Vector2(10, -6)
+		"deployer":
+			accessory.color = Color.html("#82e0aa")  # tool belt
+			accessory.size = Vector2(16, 2)
+			accessory.position = Vector2(-8, 4)
+		"supervisor":
+			accessory.color = Color.html("#f5b041")  # tiny hat
+			accessory.size = Vector2(10, 4)
+			accessory.position = Vector2(-5, -14)
+			# Also make supervisor slightly larger
+			if body:
+				body.scale = Vector2(1.2, 1.2)
+		_:
+			accessory.queue_free()
+			return
+
+	accessory.name = "Accessory"
+	if body:
+		body.add_child(accessory)
 
 
 func _on_arrived() -> void:
