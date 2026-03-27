@@ -1,8 +1,9 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/world_builder.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/world/iso_camera.gd" id="2"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="3"]
+[ext_resource type="PackedScene" path="res://scenes/ui/inspector.tscn" id="4"]
 
 [node name="Main" type="Node2D"]
 
@@ -20,3 +21,5 @@ zoom = Vector2(1, 1)
 layer = 10
 
 [node name="HUD" parent="UILayer" instance=ExtResource("3")]
+
+[node name="Inspector" parent="UILayer" instance=ExtResource("4")]
