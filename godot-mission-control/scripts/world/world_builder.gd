@@ -11,6 +11,7 @@ var station_nodes: Dictionary = {}  # station_id -> Node2D
 var agent_nodes: Dictionary = {}  # worker_id -> BlobAgent node
 var _snapshot_processed: bool = false
 var _floor_node: Node2D = null
+var _job_delivery: Node2D = null
 
 # Grid layout — wider spacing for bigger sprites
 const TILE_SIZE = 64
@@ -37,6 +38,7 @@ func _ready() -> void:
 	iso.setup(TILE_SIZE)
 
 	_draw_floor_grid()
+	_setup_job_delivery()
 
 	WorldState.snapshot_loaded.connect(_on_snapshot_loaded)
 	WorldState.worker_changed.connect(_on_worker_changed)
@@ -102,6 +104,12 @@ func _on_snapshot_loaded() -> void:
 
 	# Distribute jobs to stations for queue visuals
 	_distribute_jobs()
+
+	# Tell job delivery system where intake is
+	if _job_delivery and _job_delivery.has_method("set_intake_position"):
+		var intake_pos = nav.get_position("intake")
+		if intake_pos != Vector2.ZERO:
+			_job_delivery.set_intake_position(intake_pos)
 
 	for worker_id in WorldState.workers:
 		_spawn_agent(worker_id)
@@ -271,6 +279,15 @@ func _distribute_jobs() -> void:
 			WorldState.stations[sid]["activeJobIds"] = station_jobs[sid]
 			WorldState.stations[sid]["queueDepth"] = station_jobs[sid].size()
 			WorldState.station_changed.emit(sid)
+
+
+func _setup_job_delivery() -> void:
+	var delivery_script = load("res://scripts/world/job_delivery.gd")
+	if delivery_script:
+		_job_delivery = Node2D.new()
+		_job_delivery.name = "JobDelivery"
+		_job_delivery.set_script(delivery_script)
+		add_child(_job_delivery)
 
 
 func _on_station_changed(_station_id: String) -> void:
