@@ -43,3 +43,22 @@ size_flags_horizontal = 3
 layout_mode = 2
 size_flags_vertical = 4
 text = "Jobs: 0 | Agents: 0 | Queue: 0 | Errors: 0"
+
+[node name="SpeedPrefixLabel" type="Label" parent="HBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 4
+text = "Speed:"
+
+[node name="SpeedSlider" type="HSlider" parent="HBoxContainer"]
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+size_flags_vertical = 4
+min_value = 0.0
+max_value = 3.0
+step = 1.0
+value = 1.0
+
+[node name="SpeedLabel" type="Label" parent="HBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 4
+text = "1.0x"

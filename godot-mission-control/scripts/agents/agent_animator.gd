@@ -24,6 +24,9 @@ var mover: Node = null  # AgentMover reference, set by controller
 var _fidget_timer: float = 0.0
 var _fidget_interval: float = 5.0  # randomized
 
+# Playback speed
+var _playback_speed: float = 1.0
+
 # Emotes
 var _emote_node: Label = null
 var _emote_timer: float = 0.0
@@ -40,6 +43,7 @@ const EMOTES = {
 
 func _ready() -> void:
 	_fidget_interval = randf_range(3.0, 8.0)
+	EventBus.playback_speed_changed.connect(func(speed): _playback_speed = speed)
 
 
 func set_walking(walking: bool) -> void:
@@ -88,7 +92,7 @@ func _update_emote(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
-	_time += delta
+	_time += delta * _playback_speed
 
 	if not body_sprite:
 		return

@@ -19,6 +19,7 @@ var _body: CharacterBody2D
 
 func _ready() -> void:
 	_body = get_parent() as CharacterBody2D
+	EventBus.playback_speed_changed.connect(func(speed): speed_multiplier = speed)
 
 
 func start_path(waypoints: Array) -> void:

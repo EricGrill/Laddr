@@ -4,6 +4,11 @@ extends Control
 @onready var connection_dot: ColorRect = $HBoxContainer/ConnectionDot
 @onready var connection_label: Label = $HBoxContainer/ConnectionLabel
 @onready var metrics_label: Label = $HBoxContainer/MetricsLabel
+@onready var speed_slider: HSlider = $HBoxContainer/SpeedSlider
+@onready var speed_label: Label = $HBoxContainer/SpeedLabel
+
+# Speed values mapped to slider steps 0..3
+const SPEED_VALUES = [0.5, 1.0, 2.0, 4.0]
 
 
 func _ready() -> void:
@@ -11,6 +16,24 @@ func _ready() -> void:
 	WorldState.metrics_changed.connect(_on_metrics_changed)
 	WorldState.snapshot_loaded.connect(_on_snapshot_loaded)
 	_on_connection_state_changed(WebSocketClient.connection_state)
+
+	if speed_slider:
+		speed_slider.min_value = 0
+		speed_slider.max_value = 3
+		speed_slider.step = 1
+		speed_slider.value = 1  # Default 1.0x
+		speed_slider.value_changed.connect(_on_speed_slider_changed)
+
+	if speed_label:
+		speed_label.text = "1.0x"
+
+
+func _on_speed_slider_changed(value: float) -> void:
+	var idx = clamp(int(value), 0, SPEED_VALUES.size() - 1)
+	var speed = SPEED_VALUES[idx]
+	if speed_label:
+		speed_label.text = "%sx" % str(speed)
+	EventBus.playback_speed_changed.emit(speed)
 
 
 func _on_connection_state_changed(state: String) -> void:
