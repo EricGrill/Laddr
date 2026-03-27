@@ -66,6 +66,9 @@ func _ready() -> void:
 
 	_set_state(State.IDLE)
 
+	# Load default sprite immediately so agent is visible before role assignment
+	_apply_role_visuals()
+
 
 func _process(delta: float) -> void:
 	# Pickup animation timer
@@ -169,11 +172,13 @@ func _on_snapshot_loaded() -> void:
 
 
 func _apply_role_visuals() -> void:
-	if not agent_sprite or role == "":
+	if not agent_sprite:
 		return
+	# If no role assigned yet, pick a default based on worker_id hash
+	var actual_role = role if role != "" else ROLES[worker_id.hash() % ROLES.size()]
 	# Load sprite textures for this role
 	for dir in DIRECTIONS:
-		var path = SPRITE_BASE + role + "/" + role + "_" + dir + ".png"
+		var path = SPRITE_BASE + actual_role + "/" + actual_role + "_" + dir + ".png"
 		var tex = load(path)
 		if tex:
 			_sprite_textures[dir] = tex
@@ -181,7 +186,7 @@ func _apply_role_visuals() -> void:
 	if _sprite_textures.has("front"):
 		agent_sprite.texture = _sprite_textures["front"]
 	# Supervisor is slightly larger
-	if role == "supervisor":
+	if actual_role == "supervisor":
 		agent_sprite.scale = Vector2(0.55, 0.55)
 	# Pass textures to animator for direction switching
 	if animator:
