@@ -87,8 +87,10 @@ func _ready() -> void:
 	# Style status card text
 	if status_text:
 		var st_settings = LabelSettings.new()
-		st_settings.font_size = 9
-		st_settings.font_color = Color(0.8, 0.95, 1.0, 1.0)
+		st_settings.font_size = 13
+		st_settings.font_color = Color(0.85, 0.97, 1.0, 1.0)
+		st_settings.outline_size = 1
+		st_settings.outline_color = Color(0, 0, 0, 0.5)
 		status_text.label_settings = st_settings
 		status_text.autowrap_mode = TextServer.AUTOWRAP_WORD
 
@@ -143,6 +145,7 @@ func _update_status_card() -> void:
 		status_card.visible = true
 		var lines = []
 
+		# Action line
 		if current_state == State.WORKING:
 			lines.append("PROCESSING")
 		elif current_state == State.CARRYING:
@@ -150,17 +153,36 @@ func _update_status_card() -> void:
 		elif current_state == State.DELIVERING:
 			lines.append("DELIVERING")
 		elif active > 0:
-			lines.append("%d active" % active)
+			lines.append("BUSY - %d job%s" % [active, "s" if active > 1 else ""])
 
-		# Show model being used
+		# Extract model names from capabilities (can be strings or dicts)
+		var models = []
 		for cap in caps:
-			var c = str(cap).to_lower()
-			if "gpt" in c or "claude" in c or "llama" in c or "gemini" in c or "mistral" in c:
-				lines.append(str(cap).left(24))
-				break
+			var cap_str = ""
+			if cap is Dictionary:
+				# Could be {"id": "openai-gpt-...", "name": "GPT-4o"}
+				cap_str = str(cap.get("name", cap.get("id", "")))
+			else:
+				cap_str = str(cap)
+			var c = cap_str.to_lower()
+			if "gpt" in c or "claude" in c or "llama" in c or "gemini" in c or "mistral" in c or "qwen" in c or "deepseek" in c:
+				# Clean up the model name
+				var clean = cap_str.replace("openai-", "").replace("anthropic-", "")
+				if clean.length() > 30:
+					clean = clean.left(30)
+				if clean not in models:
+					models.append(clean)
+		if not models.is_empty():
+			lines.append("Model: %s" % models[0])
+			if models.size() > 1:
+				lines.append("  +%d more" % (models.size() - 1))
+
+		# Active jobs count
+		if active > 0:
+			lines.append("Active: %d jobs" % active)
 
 		status_text.text = "\n".join(lines)
-		status_card.position.y = -70 + sin(Time.get_ticks_msec() / 1000.0 * 1.5) * 3.0
+		status_card.position.y = -75 + sin(Time.get_ticks_msec() / 1000.0 * 1.5) * 3.0
 	else:
 		if status_card.visible and current_state == State.IDLE:
 			status_card.visible = false
