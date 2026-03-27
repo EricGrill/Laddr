@@ -11,6 +11,7 @@ var capacity: int = 1
 var state: String = "idle"
 var _original_color: Color = Color.GRAY
 var _packet_nodes: Array = []
+var _packet_pool: Array = []
 const MAX_VISIBLE_PACKETS = 5
 var _last_click_time: float = 0.0
 
@@ -82,13 +83,25 @@ func _update_from_data(data: Dictionary) -> void:
 	_update_queue_visuals()
 
 
+func _get_pooled_packet() -> Node2D:
+	if _packet_pool.size() > 0:
+		var pkt = _packet_pool.pop_back()
+		pkt.visible = true
+		return pkt
+	return load("res://scenes/items/job_packet.tscn").instantiate()
+
+
+func _return_to_pool(pkt: Node2D) -> void:
+	pkt.visible = false
+	_packet_pool.append(pkt)
+
+
 func _update_queue_visuals() -> void:
-	# Remove old packet visuals
+	# Return old packet visuals to pool
 	for pkt in _packet_nodes:
-		pkt.queue_free()
+		_return_to_pool(pkt)
 	_packet_nodes.clear()
 
-	var packet_scene = load("res://scenes/items/job_packet.tscn")
 	var data = WorldState.stations.get(station_id, {})
 	var active_jobs = data.get("activeJobIds", [])
 
@@ -96,10 +109,11 @@ func _update_queue_visuals() -> void:
 	for i in range(count):
 		var job_id = active_jobs[i]
 		var job_data = WorldState.jobs.get(job_id, {})
-		var pkt = packet_scene.instantiate()
+		var pkt = _get_pooled_packet()
+		if not pkt.is_inside_tree():
+			add_child(pkt)
 		pkt.setup(job_id, job_data.get("priority", "normal"))
 		pkt.position = Vector2(-20 + i * 10, 15)
-		add_child(pkt)
 		_packet_nodes.append(pkt)
 
 

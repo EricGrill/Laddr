@@ -8,6 +8,8 @@ extends RefCounted
 var _positions: Dictionary = {}
 # node_id -> Array[{neighbor: String, weight: float}]
 var _edges: Dictionary = {}
+# "from_id→to_id" -> Array[Vector2] cached result
+var _path_cache: Dictionary = {}
 
 
 func add_node(id: String, position: Vector2) -> void:
@@ -45,6 +47,10 @@ func find_path(from_id: String, to_id: String) -> Array:
 		return []
 	if from_id == to_id:
 		return [_positions[from_id]]
+
+	var cache_key = from_id + "→" + to_id
+	if _path_cache.has(cache_key):
+		return _path_cache[cache_key].duplicate()
 
 	# Dijkstra's
 	var dist: Dictionary = {}
@@ -87,6 +93,8 @@ func find_path(from_id: String, to_id: String) -> Array:
 	var path_positions: Array = []
 	for id in path_ids:
 		path_positions.append(_positions[id])
+
+	_path_cache[cache_key] = path_positions.duplicate()
 	return path_positions
 
 

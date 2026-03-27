@@ -97,6 +97,20 @@ func _process(delta: float) -> void:
 	if not body_sprite:
 		return
 
+	# Skip if off-screen
+	var parent_node = get_parent()
+	if parent_node and not parent_node.is_visible_in_tree():
+		return
+	var cam = get_viewport().get_camera_2d()
+	if cam:
+		var screen_pos = parent_node.get_global_transform_with_canvas().origin
+		var viewport_rect = get_viewport().get_visible_rect()
+		var margin = 100.0
+		if screen_pos.x < -margin or screen_pos.x > viewport_rect.size.x + margin:
+			return
+		if screen_pos.y < -margin or screen_pos.y > viewport_rect.size.y + margin:
+			return
+
 	_update_emote(delta)
 
 	# Update facing direction from mover velocity (8-directional, like goblin.gd)
