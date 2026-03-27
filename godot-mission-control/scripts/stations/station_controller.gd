@@ -30,20 +30,19 @@ func setup(id: String, type: String, lbl: String, cap: int, color: Color) -> voi
 	capacity = cap
 	_original_color = color
 
+
+func _ready() -> void:
+	# Apply setup params now that @onready nodes are available
 	if label_node:
-		label_node.text = lbl
+		label_node.text = station_label
 
 	# Load station sprite texture
-	if sprite_node:
-		var tex_path = STATION_SPRITE_BASE + type + ".png"
+	if sprite_node and station_type != "":
+		var tex_path = STATION_SPRITE_BASE + station_type + ".png"
 		var tex = load(tex_path)
 		if tex:
 			sprite_node.texture = tex
-		else:
-			push_warning("Station sprite not found: %s" % tex_path)
 
-
-func _ready() -> void:
 	WorldState.station_changed.connect(_on_station_changed)
 	WorldState.snapshot_loaded.connect(_on_snapshot_loaded)
 
