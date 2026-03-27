@@ -120,6 +120,7 @@ class SubmitCapabilityJobRequest(BaseModel):
     max_tool_calls: int = 20
     callback_url: str | None = None
     callback_headers: dict = PydanticField(default_factory=dict)
+    services: list[str] = PydanticField(default_factory=list)
 
 
 class SubmitScriptJobRequest(BaseModel):
@@ -2587,10 +2588,17 @@ async def submit_capability_job(request: SubmitCapabilityJobRequest):
         "max_iterations": request.max_iterations,
         "max_tool_calls": request.max_tool_calls,
         "created_at": created_at,
+        "services": request.services,
     }
     if request.callback_url:
         job_payload["callback_url"] = request.callback_url
         job_payload["callback_headers"] = json.dumps(request.callback_headers)
+
+    if service_registry:
+        playbook = service_registry.build_playbook(job_payload)
+        if playbook:
+            original = job_payload.get("system_prompt", "")
+            job_payload["system_prompt"] = f"{playbook}\n\n{original}" if original else playbook
 
     priority = request.priority if request.priority in PRIORITY_LEVELS else "normal"
     stream_key = priority_stream_key(priority)
