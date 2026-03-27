@@ -233,26 +233,18 @@ func _simulate_busy() -> void:
 
 
 func _simulate_idle() -> void:
-	# Occasionally wander to a nearby station and back
-	if randf() < 0.4:
-		# Stay put, just fidget
-		if animator:
-			if randf() < 0.5:
-				animator.play_squash()
-			else:
-				animator.show_emote("thinking")
-		return
+	# When idle, go home and stay there. Occasional fidget only.
+	if _home_station_id != "" and _nav_graph:
+		var home_pos = _nav_graph.get_position(_home_station_id)
+		if home_pos != Vector2.ZERO and position.distance_to(home_pos) > 30:
+			# Not home yet — go home
+			_move_to_station(_home_station_id)
+			_set_state(State.MOVING)
+			return
 
-	# Wander to a random reachable station
-	var destinations = []
-	for sid in ["dispatcher", "intake", _home_station_id]:
-		if _nav_graph and _nav_graph.get_position(sid) != Vector2.ZERO:
-			destinations.append(sid)
-
-	if not destinations.is_empty():
-		var target = destinations[randi() % destinations.size()]
-		_move_to_station(target)
-		_set_state(State.MOVING)
+	# Already home — just fidget occasionally
+	if randf() < 0.3 and animator:
+		animator.play_squash()
 
 
 func _set_state(new_state: State) -> void:
