@@ -35,6 +35,7 @@ var _home_station_id: String = ""
 var _sprite_textures: Dictionary = {}
 
 const SPRITE_BASE = "res://assets/sprites/agents/"
+const WORKER_SPRITE_BASE = "res://assets/sprites/workers/"
 const ROLES = ["router", "researcher", "coder", "reviewer", "deployer", "supervisor"]
 const DIRECTIONS = ["front", "iso_left", "iso_right"]
 
@@ -286,16 +287,28 @@ func _on_snapshot_loaded() -> void:
 func _apply_role_visuals() -> void:
 	if not agent_sprite:
 		return
-	var actual_role = role if role != "" else ROLES[worker_id.hash() % ROLES.size()]
+
+	# Try worker-specific sprites first (e.g., maul, snoke, darth)
+	var worker_name = worker_id.to_lower()
+	var found_worker_sprite = false
 	for dir in DIRECTIONS:
-		var path = SPRITE_BASE + actual_role + "/" + actual_role + "_" + dir + ".png"
+		var path = WORKER_SPRITE_BASE + worker_name + "/" + worker_name + "_" + dir + ".png"
 		var tex = load(path)
 		if tex:
 			_sprite_textures[dir] = tex
+			found_worker_sprite = true
+
+	# Fallback to role-based sprites
+	if not found_worker_sprite:
+		var actual_role = role if role != "" else ROLES[worker_id.hash() % ROLES.size()]
+		for dir in DIRECTIONS:
+			var path = SPRITE_BASE + actual_role + "/" + actual_role + "_" + dir + ".png"
+			var tex = load(path)
+			if tex:
+				_sprite_textures[dir] = tex
+
 	if _sprite_textures.has("front"):
 		agent_sprite.texture = _sprite_textures["front"]
-	if actual_role == "supervisor":
-		agent_sprite.scale = Vector2(0.55, 0.55)
 	if animator:
 		animator.set_role_textures(_sprite_textures)
 
