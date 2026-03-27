@@ -27,6 +27,7 @@ const TYPE_TO_SPRITE = {
 @onready var label_node: Label = $Label
 @onready var sprite_node: Sprite2D = $Sprite
 @onready var queue_label: Label = $QueueLabel
+@onready var info_label: Label = $InfoLabel
 @onready var click_area: Area2D = $ClickArea
 
 
@@ -42,6 +43,28 @@ func _ready() -> void:
 	# Apply setup params now that @onready nodes are available
 	if label_node:
 		label_node.text = station_label
+		var label_settings = LabelSettings.new()
+		label_settings.font_size = 14
+		label_settings.font_color = Color.WHITE
+		label_settings.outline_size = 3
+		label_settings.outline_color = Color(0, 0, 0, 0.8)
+		label_node.label_settings = label_settings
+
+	if info_label:
+		var info_settings = LabelSettings.new()
+		info_settings.font_size = 10
+		info_settings.font_color = Color(0.7, 0.8, 0.7, 0.9)
+		info_settings.outline_size = 2
+		info_settings.outline_color = Color(0, 0, 0, 0.6)
+		info_label.label_settings = info_settings
+
+	if queue_label:
+		var q_settings = LabelSettings.new()
+		q_settings.font_size = 12
+		q_settings.font_color = Color(1.0, 0.9, 0.5, 1.0)
+		q_settings.outline_size = 2
+		q_settings.outline_color = Color(0, 0, 0, 0.7)
+		queue_label.label_settings = q_settings
 
 	# Load station sprite texture (map backend types to available sprites)
 	if sprite_node and station_type != "":
@@ -91,6 +114,22 @@ func _update_from_data(data: Dictionary) -> void:
 			sprite_node.modulate = Color(1.2, 1.1, 0.7, 1)  # yellow tint
 		else:
 			sprite_node.modulate = Color.WHITE  # normal
+
+	# Show active job count and worker info below station
+	if info_label:
+		var active_jobs = data.get("activeJobIds", [])
+		var worker_id_val = data.get("workerId", "")
+		var info_parts = []
+		if worker_id_val != null and worker_id_val != "":
+			# Worker station — show active jobs
+			var active_count = data.get("queueDepth", 0)
+			if active_count > 0:
+				info_parts.append("%d active" % active_count)
+			else:
+				info_parts.append(state)
+		elif not active_jobs.is_empty():
+			info_parts.append("%d jobs" % active_jobs.size())
+		info_label.text = " | ".join(info_parts)
 
 	var effects = get_node_or_null("StationEffects")
 	if effects:

@@ -4,7 +4,7 @@
 [ext_resource type="Script" path="res://scripts/stations/station_effects.gd" id="2"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_placeholder"]
-size = Vector2(64, 48)
+size = Vector2(80, 60)
 
 [node name="Station" type="Node2D"]
 script = ExtResource("1")
@@ -13,18 +13,26 @@ script = ExtResource("1")
 scale = Vector2(0.6, 0.6)
 
 [node name="Label" type="Label" parent="."]
-offset_left = -50.0
-offset_top = -90.0
-offset_right = 50.0
-offset_bottom = -72.0
+offset_left = -60.0
+offset_top = -95.0
+offset_right = 60.0
+offset_bottom = -75.0
 horizontal_alignment = 1
 text = "Station"
 
+[node name="InfoLabel" type="Label" parent="."]
+offset_left = -60.0
+offset_top = 40.0
+offset_right = 60.0
+offset_bottom = 60.0
+horizontal_alignment = 1
+text = ""
+
 [node name="QueueLabel" type="Label" parent="."]
-offset_left = 50.0
-offset_top = -60.0
-offset_right = 80.0
-offset_bottom = -42.0
+offset_left = 55.0
+offset_top = -70.0
+offset_right = 85.0
+offset_bottom = -52.0
 horizontal_alignment = 1
 text = ""
 

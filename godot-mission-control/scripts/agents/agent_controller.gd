@@ -60,6 +60,15 @@ func _ready() -> void:
 	if click_area:
 		click_area.input_event.connect(_on_click_area_input)
 
+	# Style the agent label
+	if label_node:
+		var lbl_settings = LabelSettings.new()
+		lbl_settings.font_size = 11
+		lbl_settings.font_color = Color(0.9, 0.95, 1.0, 0.9)
+		lbl_settings.outline_size = 2
+		lbl_settings.outline_color = Color(0, 0, 0, 0.7)
+		label_node.label_settings = lbl_settings
+
 	# Hide job packet initially
 	if job_packet_visual:
 		job_packet_visual.visible = false
