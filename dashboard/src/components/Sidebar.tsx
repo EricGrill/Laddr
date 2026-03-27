@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Home, Users, Play, Clock, GitBranch, Terminal, Settings, LogOut, Gauge, Columns2 } from 'lucide-react';
+import { Home, Users, Play, Clock, GitBranch, Terminal, Settings, LogOut, Gauge, Columns2, Layers } from 'lucide-react';
 import { logout, getCurrentUser } from '../lib/auth';
+import { endSessionTracking } from '../lib/api';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: Home },
@@ -10,8 +11,9 @@ const navigation = [
   { name: 'Traces', href: '/traces', icon: GitBranch },
   { name: 'Batches', href: '/batches', icon: GitBranch },
   { name: 'Logs', href: '/logs', icon: Terminal },
-  { name: 'Settings', href: '/settings', icon: Settings },
   { name: 'Job Board', href: '/jobs-board', icon: Columns2 },
+  { name: 'Services', href: '/services', icon: Layers },
+  { name: 'Settings', href: '/settings', icon: Settings },
   { name: 'Mission Control', href: '/mission-control', icon: Gauge },
 ];
 
@@ -19,10 +21,20 @@ export default function Sidebar() {
   const navigate = useNavigate();
   const user = getCurrentUser();
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
+  const handleLogout = async () => {
+    try {
+      await endSessionTracking();
+    } catch {
+      // Best effort: logout should still complete even if API call fails.
+    } finally {
+      logout();
+      navigate('/login');
+    }
   };
+
+  const visibleNavigation = user?.role === "admin"
+    ? [...navigation, { name: 'Users', href: '/users', icon: Users }, { name: 'User Sessions', href: '/user-sessions', icon: Clock }]
+    : navigation;
 
   return (
     <div className="w-64 h-screen bg-[#191A1A] flex flex-col">
@@ -35,9 +47,9 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 mt-2">
-        {navigation.map((item) => (
+        {visibleNavigation.map((item) => (
           <NavLink
-            key={item.name}
+            key={item.href}
             to={item.href}
             end={item.href === '/'}
             className={({ isActive }) =>
@@ -66,7 +78,7 @@ export default function Sidebar() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-white truncate">{user?.username || 'Guest User'}</div>
-            {/* <div className="text-xs text-gray-400 truncate">{'guest@example.com'}</div> */}
+            <div className="text-xs text-gray-400 truncate">{user?.role || 'unknown'}</div>
           </div>
           <button
             onClick={handleLogout}
