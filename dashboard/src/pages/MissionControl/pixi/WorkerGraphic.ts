@@ -467,8 +467,8 @@ export function updateWorker(
     breathAlpha = 0.3;
   }
 
-  const bodyW = 20;
-  const bodyH = 16;
+  const bodyW = 40;
+  const bodyH = 30;
   const alpha = isOffline ? 0.3 : 1;
 
   // Draw body
@@ -478,9 +478,9 @@ export function updateWorker(
   g.fill({ color: 0x0e1218, alpha: 0.3 * alpha });
   g.roundRect(-bodyW / 2, -bodyH / 2, bodyW, bodyH, 3);
   g.fill({ color: 0x2c313a, alpha });
-  g.roundRect(-bodyW / 2 + 2, -bodyH / 2 + 1, bodyW - 4, 3, 1);
+  g.roundRect(-bodyW / 2 + 3, -bodyH / 2 + 2, bodyW - 6, 5, 2);
   g.fill({ color: refs.roleColor, alpha: breathAlpha * alpha });
-  g.circle(0, -bodyH / 2 + 5, 2);
+  g.circle(0, -bodyH / 2 + 9, 4);
   g.fill({ color: refs.roleColor, alpha: breathAlpha * alpha });
   if (isDraining) {
     g.roundRect(-bodyW / 2 - 1, -bodyH / 2 - 1, bodyW + 2, bodyH + 2, 4);
@@ -522,8 +522,8 @@ export function updateWorker(
     || refs.anim.phase === 'processing';
   if (isCarrying && !isOffline) {
     const chipColor = JOB_TYPE_COLORS[refs.anim.carriedJobType] ?? JOB_TYPE_COLORS.default;
-    const chipW = 12;
-    const chipH = 8;
+    const chipW = 22;
+    const chipH = 14;
     // Bob animation
     const bob = Math.sin(elapsed * 4) * 2;
     const chipY = -bodyH / 2 - 8 + bob;
