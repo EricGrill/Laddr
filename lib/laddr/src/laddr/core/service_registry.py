@@ -136,6 +136,16 @@ class ServiceRegistry:
         3. Otherwise inject all available services.
 
         Returns an empty string if no matching services are available.
+
+        ``requirements`` may be a dict or a JSON string (as stored in some job
+        payloads).
+
+        Callers should prepend the returned string to the job's ``system_prompt``
+        with a blank line separator::
+
+            playbook = registry.build_playbook(job)
+            if playbook:
+                job["system_prompt"] = playbook + "\\n\\n" + job.get("system_prompt", "")
         """
         # Resolve requirements — may be a dict or a JSON string
         requirements = job.get("requirements", {})
