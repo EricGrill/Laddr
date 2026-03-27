@@ -101,10 +101,22 @@ func _on_worker_removed(worker_id: String) -> void:
 func _spawn_agent(worker_id: String) -> void:
 	if agent_nodes.has(worker_id):
 		return
-	# Placeholder for Task 6 - will load blob_agent.tscn
-	var agent = Node2D.new()
-	agent.name = "agent_" + worker_id.left(8)
+	var agent_scn = load("res://scenes/agents/blob_agent.tscn")
+	var agent = agent_scn.instantiate()
 
+	# Assign a Claude-palette color based on worker ID hash
+	var colors = [
+		Color.html("#d4836b"),  # terracotta
+		Color.html("#e8a87c"),  # warm orange
+		Color.html("#f0c8a0"),  # soft peach
+		Color.html("#c97b7b"),  # dusty rose
+		Color.html("#d4a574"),  # sandy
+		Color.html("#b07d62"),  # deep clay
+	]
+	var color_index = worker_id.hash() % colors.size()
+	agent.setup(worker_id, nav, colors[color_index])
+
+	# Start at intake station
 	var start_pos = nav.get_position("intake")
 	agent.position = start_pos
 
