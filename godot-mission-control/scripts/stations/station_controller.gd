@@ -78,6 +78,29 @@ func _update_from_data(data: Dictionary) -> void:
 	if effects:
 		effects.update_state(state, queue_depth)
 
+	_update_queue_visuals()
+
+
+func _update_queue_visuals() -> void:
+	# Remove old packet visuals
+	for pkt in _packet_nodes:
+		pkt.queue_free()
+	_packet_nodes.clear()
+
+	var packet_scene = load("res://scenes/items/job_packet.tscn")
+	var data = WorldState.stations.get(station_id, {})
+	var active_jobs = data.get("activeJobIds", [])
+
+	var count = mini(active_jobs.size(), MAX_VISIBLE_PACKETS)
+	for i in range(count):
+		var job_id = active_jobs[i]
+		var job_data = WorldState.jobs.get(job_id, {})
+		var pkt = packet_scene.instantiate()
+		pkt.setup(job_id, job_data.get("priority", "normal"))
+		pkt.position = Vector2(-20 + i * 10, 15)
+		add_child(pkt)
+		_packet_nodes.append(pkt)
+
 
 func _on_click_area_input(_viewport: Node, event: InputEvent, _shape_idx: int) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
