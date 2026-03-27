@@ -1,0 +1,33 @@
+{
+  "floor": {
+    "width": 20,
+    "height": 14,
+    "tile_size": 64
+  },
+  "stations": [
+    { "id": "intake", "type": "intake", "label": "Mailroom", "grid_pos": [3, 2], "capacity": 10, "visual": "mailbox" },
+    { "id": "dispatcher", "type": "router", "label": "Dispatch Desk", "grid_pos": [10, 7], "capacity": 5, "visual": "dispatch_hub" },
+    { "id": "llm_station", "type": "research", "label": "Think Tank", "grid_pos": [5, 10], "capacity": 3, "visual": "research_pod" },
+    { "id": "code_forge", "type": "code", "label": "Code Forge", "grid_pos": [15, 10], "capacity": 3, "visual": "terminal_desk" },
+    { "id": "review_deck", "type": "review", "label": "Review Bay", "grid_pos": [15, 4], "capacity": 2, "visual": "scanner_gate" },
+    { "id": "output_dock", "type": "output", "label": "Ship It!", "grid_pos": [18, 7], "capacity": 8, "visual": "output_chute" },
+    { "id": "supervisor", "type": "supervisor", "label": "Boss Desk", "grid_pos": [10, 2], "capacity": 1, "visual": "command_chair" },
+    { "id": "error_chamber", "type": "error", "label": "Oops Corner", "grid_pos": [2, 12], "capacity": 5, "visual": "error_bin" }
+  ],
+  "waypoints": [
+    { "id": "wp_center", "grid_pos": [10, 7] },
+    { "id": "wp_top", "grid_pos": [10, 3] },
+    { "id": "wp_left", "grid_pos": [4, 7] },
+    { "id": "wp_right", "grid_pos": [16, 7] },
+    { "id": "wp_bottom", "grid_pos": [10, 11] }
+  ],
+  "paths": [
+    ["intake", "wp_left", "wp_center", "dispatcher"],
+    ["dispatcher", "wp_center", "wp_bottom", "llm_station"],
+    ["dispatcher", "wp_center", "wp_bottom", "code_forge"],
+    ["dispatcher", "wp_center", "wp_top", "review_deck"],
+    ["dispatcher", "wp_center", "wp_right", "output_dock"],
+    ["dispatcher", "wp_top", "supervisor"],
+    ["dispatcher", "wp_left", "error_chamber"]
+  ]
+}

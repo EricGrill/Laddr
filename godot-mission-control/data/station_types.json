@@ -1,0 +1,50 @@
+{
+  "intake": {
+    "label": "Mailroom",
+    "color": "#e8a87c",
+    "icon": "mailbox",
+    "description": "Jobs enter the system here"
+  },
+  "router": {
+    "label": "Dispatch",
+    "color": "#85c1e9",
+    "icon": "dispatch_hub",
+    "description": "Routes jobs to appropriate stations"
+  },
+  "research": {
+    "label": "Think Tank",
+    "color": "#a8d8b9",
+    "icon": "research_pod",
+    "description": "LLM reasoning and analysis"
+  },
+  "code": {
+    "label": "Code Forge",
+    "color": "#f5b041",
+    "icon": "terminal_desk",
+    "description": "Code generation and execution"
+  },
+  "review": {
+    "label": "Review Bay",
+    "color": "#bb8fce",
+    "icon": "scanner_gate",
+    "description": "Quality review and validation"
+  },
+  "output": {
+    "label": "Ship It!",
+    "color": "#82e0aa",
+    "icon": "output_chute",
+    "description": "Completed jobs exit here"
+  },
+  "supervisor": {
+    "label": "Boss Desk",
+    "color": "#f1948a",
+    "icon": "command_chair",
+    "description": "Escalation and oversight"
+  },
+  "error": {
+    "label": "Oops Corner",
+    "color": "#e74c3c",
+    "icon": "error_bin",
+    "description": "Failed jobs land here"
+  }
+}
