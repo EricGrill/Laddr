@@ -10,9 +10,13 @@ import { useEntityStore } from '../stores/entityStore';
 import { useUIStore } from '../stores/uiStore';
 import type { StationType, StationState, MCWorker, MCJob } from '../types';
 
-const CANVAS_W = 1600;
-const CANVAS_H = 900;
 const BG_COLOR = 0x1a2230;
+
+/** Resolve a station layout position to screen coordinates */
+function resolvePos(id: string, screenW: number, screenH: number): { x: number; y: number } {
+  const layout = STATION_POSITIONS[id] ?? STATION_POSITIONS.dispatcher;
+  return { x: layout.x * screenW, y: layout.y * screenH };
+}
 
 function workerPosition(
   stationX: number,
@@ -48,19 +52,23 @@ function packetPosition(
   return { x: stationX + offsetX * 0.5, y: stationY - 35 };
 }
 
-function buildStationList(stations: Record<string, { id: string; type: string; label: string; state: string; queueDepth: number }>): StationConfig[] {
+function buildStationList(
+  stations: Record<string, { id: string; type: string; label: string; state: string; queueDepth: number }>,
+  screenW: number,
+  screenH: number,
+): StationConfig[] {
   const storeStations = Object.values(stations);
   if (storeStations.length > 0) {
     return storeStations.map((s) => {
       const layout = STATION_POSITIONS[s.id] ??
-        STATION_POSITIONS[s.type] ?? { x: 400, y: 400, type: s.type, label: s.label };
+        STATION_POSITIONS[s.type] ?? { x: 0.5, y: 0.5, type: s.type, label: s.label };
       return {
         id: s.id,
         type: s.type as StationType,
         label: s.label || layout.label,
         state: s.state as StationState,
-        x: layout.x,
-        y: layout.y,
+        x: layout.x * screenW,
+        y: layout.y * screenH,
         queueDepth: s.queueDepth,
       };
     });
@@ -70,8 +78,8 @@ function buildStationList(stations: Record<string, { id: string; type: string; l
     type: layout.type,
     label: layout.label,
     state: 'idle' as StationState,
-    x: layout.x,
-    y: layout.y,
+    x: layout.x * screenW,
+    y: layout.y * screenH,
     queueDepth: 0,
   }));
 }
@@ -104,7 +112,7 @@ export function PixiCanvas() {
 
     function syncStations() {
       const state = useEntityStore.getState();
-      const stationList = buildStationList(state.stations);
+      const stationList = buildStationList(state.stations, app.screen.width, app.screen.height);
       const currentIds = new Set(stationList.map((s) => s.id));
 
       // Remove old
@@ -152,7 +160,7 @@ export function PixiCanvas() {
       }
 
       for (const [cap, group] of Object.entries(stationWorkerGroups)) {
-        const layout = STATION_POSITIONS[cap] ?? STATION_POSITIONS.dispatcher;
+        const layout = resolvePos(cap, app.screen.width, app.screen.height);
         for (let i = 0; i < group.length; i++) {
           const w = group[i];
           if (!workerContainers.has(w.id)) {
@@ -220,23 +228,15 @@ export function PixiCanvas() {
 
       containerRef.current!.appendChild(app.canvas);
 
-      // Scale the stage so the scene fills the viewport
-      function fitStage() {
-        const w = app.screen.width;
-        const h = app.screen.height;
-        const scaleX = w / CANVAS_W;
-        const scaleY = h / CANVAS_H;
-        const scale = Math.min(scaleX, scaleY);
-        app.stage.scale.set(scale);
-        // Center the scene
-        app.stage.x = (w - CANVAS_W * scale) / 2;
-        app.stage.y = (h - CANVAS_H * scale) / 2;
-      }
-      fitStage();
-      app.renderer.on('resize', fitStage);
+      // No scaling — scene coordinates = screen coordinates
+      // Station positions are defined as fractions in STATION_POSITIONS
+      // and get multiplied by actual screen size in syncStations
+      app.stage.scale.set(1);
+      app.stage.x = 0;
+      app.stage.y = 0;
 
-      // Build scene
-      const environmentLayer = createEnvironment(CANVAS_W, CANVAS_H);
+      // Build scene — use actual screen dimensions
+      const environmentLayer = createEnvironment(app.screen.width, app.screen.height);
       app.stage.addChild(environmentLayer);
 
       pipelineLayer = createPipelines();
@@ -320,7 +320,7 @@ export function PixiCanvas() {
           stationWorkerGroups[cap].push(w);
         }
         for (const [cap, group] of Object.entries(stationWorkerGroups)) {
-          const layout = STATION_POSITIONS[cap] ?? STATION_POSITIONS.dispatcher;
+          const layout = resolvePos(cap, app.screen.width, app.screen.height);
           for (let i = 0; i < group.length; i++) {
             const w = group[i];
             const wc = workerContainers.get(w.id);
@@ -352,7 +352,7 @@ export function PixiCanvas() {
         }
 
         for (const [sid, group] of Object.entries(stationJobGroups)) {
-          const layout = STATION_POSITIONS[sid] ?? STATION_POSITIONS.intake;
+          const layout = resolvePos(sid, app.screen.width, app.screen.height);
           const visible = group.slice(0, 5); // only 5 rendered per station
           for (let i = 0; i < visible.length; i++) {
             const j = visible[i];

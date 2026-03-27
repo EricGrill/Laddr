@@ -30,15 +30,16 @@ export const STATION_POSITIONS: Record<
   string,
   { x: number; y: number; type: StationType; label: string }
 > = {
-  intake: { x: 200, y: 200, type: 'intake', label: 'Incoming Orders' },
-  dispatcher: { x: 650, y: 400, type: 'dispatcher', label: 'Dispatch Hub' },
-  llm: { x: 350, y: 600, type: 'llm', label: 'Science/Research' },
-  code: { x: 950, y: 600, type: 'code', label: 'Systems Engineering' },
-  tool: { x: 200, y: 750, type: 'tool', label: 'Recon/Comms' },
-  output: { x: 1150, y: 400, type: 'output', label: 'Output Dock' },
-  supervisor: { x: 950, y: 170, type: 'supervisor', label: 'Review/Verification' },
-  'command-oversight': { x: 1350, y: 170, type: 'supervisor', label: 'Command Deck' },
-  error: { x: 950, y: 780, type: 'error', label: 'Error Chamber' },
+  // Positions as fractions (0-1) of viewport — multiply by screen width/height
+  intake: { x: 0.12, y: 0.18, type: 'intake', label: 'Incoming Orders' },
+  dispatcher: { x: 0.40, y: 0.45, type: 'dispatcher', label: 'Dispatch Hub' },
+  llm: { x: 0.22, y: 0.68, type: 'llm', label: 'Science/Research' },
+  code: { x: 0.60, y: 0.68, type: 'code', label: 'Systems Engineering' },
+  tool: { x: 0.12, y: 0.85, type: 'tool', label: 'Recon/Comms' },
+  output: { x: 0.72, y: 0.45, type: 'output', label: 'Output Dock' },
+  supervisor: { x: 0.60, y: 0.15, type: 'supervisor', label: 'Review/Verification' },
+  'command-oversight': { x: 0.85, y: 0.15, type: 'supervisor', label: 'Command Deck' },
+  error: { x: 0.60, y: 0.88, type: 'error', label: 'Error Chamber' },
 };
 
 export interface StationConfig {
