@@ -61,19 +61,33 @@ func _draw_floor_grid() -> void:
 	_floor_node.z_index = -5
 	add_child(_floor_node)
 
+	var tile_dark = load("res://assets/sprites/tiles/floor_tile_dark.png")
+	var tile_light = load("res://assets/sprites/tiles/floor_tile_light.png")
+
 	for gx in range(GRID_W):
 		for gy in range(GRID_H):
 			var screen_pos = iso.grid_to_screen(Vector2(gx, gy))
-			var tile = ColorRect.new()
-			# Alternate tile colors for checkerboard
-			if (gx + gy) % 2 == 0:
-				tile.color = Color(0.18, 0.20, 0.25, 1.0)
+			if tile_dark and tile_light:
+				var sprite = Sprite2D.new()
+				sprite.texture = tile_dark if (gx + gy) % 2 == 0 else tile_light
+				sprite.position = screen_pos
+				sprite.scale = Vector2(1.0, 1.0)
+				# Fade edges for softer look
+				var dist_from_center = Vector2(gx - GRID_W / 2.0, gy - GRID_H / 2.0).length()
+				var max_dist = Vector2(GRID_W / 2.0, GRID_H / 2.0).length()
+				var alpha = clampf(1.0 - (dist_from_center / max_dist) * 0.5, 0.4, 1.0)
+				sprite.modulate = Color(1, 1, 1, alpha)
+				_floor_node.add_child(sprite)
 			else:
-				tile.color = Color(0.15, 0.17, 0.22, 1.0)
-			tile.size = Vector2(TILE_SIZE - 2, TILE_SIZE / 2 - 1)
-			tile.position = screen_pos - tile.size / 2
-			tile.rotation = 0
-			_floor_node.add_child(tile)
+				# Fallback to colored rects
+				var tile = ColorRect.new()
+				if (gx + gy) % 2 == 0:
+					tile.color = Color(0.18, 0.20, 0.25, 1.0)
+				else:
+					tile.color = Color(0.15, 0.17, 0.22, 1.0)
+				tile.size = Vector2(TILE_SIZE - 2, TILE_SIZE / 2 - 1)
+				tile.position = screen_pos - tile.size / 2
+				_floor_node.add_child(tile)
 
 
 func _on_snapshot_loaded() -> void:

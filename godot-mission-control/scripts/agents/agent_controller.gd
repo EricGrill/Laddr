@@ -20,6 +20,8 @@ var _active_jobs: int = 0
 @onready var agent_sprite: Sprite2D = $Body/AgentSprite
 @onready var label_node: Label = $Label
 @onready var job_packet_visual: Sprite2D = $Body/JobPacket
+@onready var status_card: Node2D = $Body/StatusCard
+@onready var status_text: Label = $Body/StatusCard/StatusText
 @onready var click_area: Area2D = $ClickArea
 
 var _nav_graph: NavGraph
@@ -82,6 +84,17 @@ func _ready() -> void:
 	if job_packet_visual:
 		job_packet_visual.visible = false
 
+	# Style status card text
+	if status_text:
+		var st_settings = LabelSettings.new()
+		st_settings.font_size = 9
+		st_settings.font_color = Color(0.8, 0.95, 1.0, 1.0)
+		status_text.label_settings = st_settings
+		status_text.autowrap_mode = TextServer.AUTOWRAP_WORD
+
+	if status_card:
+		status_card.visible = false
+
 	_set_state(State.IDLE)
 	_apply_role_visuals()
 	_activity_timer = randf_range(1.0, 5.0)
@@ -105,11 +118,70 @@ func _process(delta: float) -> void:
 		else:
 			label_node.text = "%s - %s" % [name, status]
 
+	# Update status card
+	_update_status_card()
+
 	# Activity simulation — make agents move and do things based on worker state
 	_activity_timer -= delta
 	if _activity_timer <= 0:
 		_activity_timer = randf_range(3.0, 7.0)
 		_simulate_activity()
+
+
+func _update_status_card() -> void:
+	if not status_card or not status_text:
+		return
+
+	var worker_data = WorldState.workers.get(worker_id, {})
+	var active = worker_data.get("activeJobs", 0)
+	var status = worker_data.get("status", "online")
+	var caps = worker_data.get("capabilities", [])
+
+	var is_busy = active > 0 or current_state in [State.WORKING, State.CARRYING, State.DELIVERING]
+
+	if is_busy:
+		status_card.visible = true
+		var lines = []
+
+		# Show what they're doing
+		if current_state == State.WORKING:
+			lines.append("[color=#5ce0d8]PROCESSING[/color]")
+		elif current_state == State.CARRYING:
+			lines.append("[color=#f5b041]CARRYING JOB[/color]")
+		elif current_state == State.DELIVERING:
+			lines.append("[color=#82e0aa]DELIVERING[/color]")
+		elif active > 0:
+			lines.append("[color=#5ce0d8]%d active job%s[/color]" % [active, "s" if active > 1 else ""])
+
+		# Show model/capability being used
+		if not caps.is_empty():
+			var model = ""
+			for cap in caps:
+				var c = str(cap).to_lower()
+				if "gpt" in c or "claude" in c or "llama" in c or "gemini" in c or "mistral" in c:
+					model = str(cap)
+					break
+			if model != "":
+				lines.append(model.left(24))
+
+		# Show a recent job type if available
+		if active > 0:
+			# Find a processing job
+			for jid in WorldState.jobs:
+				var job = WorldState.jobs[jid]
+				if job.get("state", "") == "processing":
+					var jtype = job.get("type", "")
+					if jtype != "":
+						lines.append(str(jtype).left(22))
+					break
+
+		status_text.text = "\n".join(lines)
+
+		# Gentle float animation
+		status_card.position.y = -70 + sin(Time.get_ticks_msec() / 1000.0 * 1.5) * 3.0
+	else:
+		if status_card.visible and current_state == State.IDLE:
+			status_card.visible = false
 
 
 func _simulate_activity() -> void:
@@ -133,30 +205,29 @@ func _simulate_activity() -> void:
 
 
 func _simulate_busy() -> void:
-	# Pick a random work flow: go to dispatcher, pick up, carry to home station
 	var destinations = []
-
-	# Build list of reachable stations
 	for sid in ["dispatcher", "intake", "output-dock"]:
 		if _nav_graph and _nav_graph.get_position(sid) != Vector2.ZERO:
 			destinations.append(sid)
-
 	if _home_station_id != "" and _nav_graph and _nav_graph.get_position(_home_station_id) != Vector2.ZERO:
 		destinations.append(_home_station_id)
 
 	if destinations.is_empty():
-		# Just show working emote
 		if animator:
 			animator.show_emote("lightbulb")
 		return
 
-	# Alternate between picking up from dispatcher and working at home station
-	var target = destinations[randi() % destinations.size()]
+	# Weighted: prefer home station and dispatcher
+	var weighted = [_home_station_id, _home_station_id, "dispatcher", "dispatcher"]
+	for sid in destinations:
+		weighted.append(sid)
+	var target = weighted[randi() % weighted.size()]
+	if _nav_graph and _nav_graph.get_position(target) == Vector2.ZERO:
+		target = destinations[randi() % destinations.size()]
 
-	# Show carrying a packet while moving
+	# Show carrying a packet
 	if job_packet_visual:
 		job_packet_visual.visible = true
-		# Load a random priority packet sprite
 		var priorities = ["normal", "high", "critical"]
 		var pri = priorities[randi() % priorities.size()]
 		var tex = load("res://assets/sprites/packets/packet_%s.png" % pri)
@@ -166,8 +237,9 @@ func _simulate_busy() -> void:
 	_move_to_station(target)
 	_set_state(State.CARRYING)
 
+	# Varied emotes while working
 	if animator:
-		var emotes = ["lightbulb", "thinking", "success"]
+		var emotes = ["lightbulb", "thinking", "success", "lightbulb", "thinking"]
 		animator.show_emote(emotes[randi() % emotes.size()])
 
 
