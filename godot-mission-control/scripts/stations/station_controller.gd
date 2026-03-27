@@ -17,6 +17,13 @@ var _last_click_time: float = 0.0
 
 const STATION_SPRITE_BASE = "res://assets/sprites/stations/"
 
+# Map backend station types to sprite filenames (for types without their own sprite)
+const TYPE_TO_SPRITE = {
+	"dispatcher": "router",
+	"llm": "research",
+	"tool": "code",
+}
+
 @onready var label_node: Label = $Label
 @onready var sprite_node: Sprite2D = $Sprite
 @onready var queue_label: Label = $QueueLabel
@@ -36,9 +43,10 @@ func _ready() -> void:
 	if label_node:
 		label_node.text = station_label
 
-	# Load station sprite texture
+	# Load station sprite texture (map backend types to available sprites)
 	if sprite_node and station_type != "":
-		var tex_path = STATION_SPRITE_BASE + station_type + ".png"
+		var sprite_name = TYPE_TO_SPRITE.get(station_type, station_type)
+		var tex_path = STATION_SPRITE_BASE + sprite_name + ".png"
 		var tex = load(tex_path)
 		if tex:
 			sprite_node.texture = tex

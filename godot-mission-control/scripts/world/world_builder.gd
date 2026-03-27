@@ -1,8 +1,7 @@
 extends Node2D
-## Reads office_layout.json and spawns stations, waypoints, and nav graph.
-## Attach this to a Node2D in main.tscn.
+## Dynamically builds the world from backend WebSocket snapshot.
+## Spawns stations, agents, and nav graph from live data.
 
-const LAYOUT_PATH = "res://data/office_layout.json"
 const STATION_TYPES_PATH = "res://data/station_types.json"
 
 var iso: IsometricUtils = IsometricUtils.new()
@@ -10,27 +9,34 @@ var nav: NavGraph = NavGraph.new()
 var station_types: Dictionary = {}
 var station_nodes: Dictionary = {}  # station_id -> Node2D
 var agent_nodes: Dictionary = {}  # worker_id -> BlobAgent node
+var _snapshot_processed: bool = false
 
-@export var station_scene: PackedScene
+# Grid layout for auto-positioning stations
+# Fixed stations get known positions, dynamic (worker) stations fill remaining slots
+const FIXED_POSITIONS = {
+	"intake": Vector2(2, 3),
+	"dispatcher": Vector2(6, 6),
+	"supervisor": Vector2(10, 3),
+	"error-chamber": Vector2(2, 9),
+	"output-dock": Vector2(14, 6),
+}
+
+# Slots for dynamic worker stations (positioned in a row)
+const DYNAMIC_START = Vector2(6, 10)
+const DYNAMIC_SPACING = Vector2(4, 0)
+
+const TILE_SIZE = 64
 
 
 func _ready() -> void:
 	add_to_group("world_builder")
-
-	var layout = _load_json(LAYOUT_PATH)
 	station_types = _load_json(STATION_TYPES_PATH)
+	iso.setup(TILE_SIZE)
 
-	if layout.is_empty():
-		push_error("Failed to load office layout")
-		return
-
-	iso.setup(layout["floor"]["tile_size"])
-	_build_nav_graph(layout)
-	_spawn_stations(layout)
-
+	WorldState.snapshot_loaded.connect(_on_snapshot_loaded)
 	WorldState.worker_changed.connect(_on_worker_changed)
 	WorldState.worker_removed.connect(_on_worker_removed)
-	WorldState.snapshot_loaded.connect(_on_snapshot_loaded)
+	WorldState.station_changed.connect(_on_station_changed)
 	FilterState.filters_changed.connect(_on_filters_changed)
 
 
@@ -42,50 +48,119 @@ func get_station_screen_pos(station_id: String) -> Vector2:
 	return nav.get_position(station_id)
 
 
-func _build_nav_graph(layout: Dictionary) -> void:
-	for station in layout["stations"]:
-		var grid_pos = Vector2(station["grid_pos"][0], station["grid_pos"][1])
-		var screen_pos = iso.grid_to_screen(grid_pos)
-		nav.add_node(station["id"], screen_pos)
-
-	for wp in layout["waypoints"]:
-		var grid_pos = Vector2(wp["grid_pos"][0], wp["grid_pos"][1])
-		var screen_pos = iso.grid_to_screen(grid_pos)
-		nav.add_node(wp["id"], screen_pos)
-
-	for path in layout["paths"]:
-		var path_array: Array = []
-		for id in path:
-			path_array.append(id)
-		nav.add_path(path_array)
-
-
-func _spawn_stations(layout: Dictionary) -> void:
-	var station_scn = load("res://scenes/stations/station.tscn")
-	for station_data in layout["stations"]:
-		var grid_pos = Vector2(station_data["grid_pos"][0], station_data["grid_pos"][1])
-		var screen_pos = iso.grid_to_screen(grid_pos)
-
-		var node = station_scn.instantiate()
-		node.position = screen_pos
-
-		var type_info = station_types.get(station_data["type"], {})
-		var color = Color.html(type_info.get("color", "#888888"))
-		node.setup(
-			station_data["id"],
-			station_data["type"],
-			station_data["label"],
-			station_data["capacity"],
-			color
-		)
-
-		add_child(node)
-		station_nodes[station_data["id"]] = node
-
-
 func _on_snapshot_loaded() -> void:
+	if _snapshot_processed:
+		# Just update existing nodes on reconnect
+		for worker_id in WorldState.workers:
+			if not agent_nodes.has(worker_id):
+				_spawn_agent(worker_id)
+		return
+
+	_snapshot_processed = true
+
+	# Build stations from backend data
+	_build_from_snapshot()
+
+	# Spawn agents for all workers
 	for worker_id in WorldState.workers:
 		_spawn_agent(worker_id)
+
+
+func _build_from_snapshot() -> void:
+	# Clear any existing
+	for sid in station_nodes:
+		station_nodes[sid].queue_free()
+	station_nodes.clear()
+	nav = NavGraph.new()
+
+	var dynamic_index = 0
+
+	# Create stations from WorldState
+	for station_id in WorldState.stations:
+		var station_data = WorldState.stations[station_id]
+		var grid_pos: Vector2
+
+		# Fixed stations get known positions
+		if FIXED_POSITIONS.has(station_id):
+			grid_pos = FIXED_POSITIONS[station_id]
+		else:
+			# Dynamic worker stations auto-layout
+			grid_pos = DYNAMIC_START + DYNAMIC_SPACING * dynamic_index
+			dynamic_index += 1
+
+		var screen_pos = iso.grid_to_screen(grid_pos)
+		nav.add_node(station_id, screen_pos)
+		_spawn_station(station_id, station_data, screen_pos)
+
+	# Add waypoints for pathfinding between stations
+	_add_waypoints()
+
+	# Build paths connecting all stations through center
+	_build_paths()
+
+
+func _spawn_station(station_id: String, data: Dictionary, screen_pos: Vector2) -> void:
+	var station_scn = load("res://scenes/stations/station.tscn")
+	var node = station_scn.instantiate()
+	node.position = screen_pos
+
+	var stype = data.get("type", "code")
+	var label = data.get("label", station_id)
+	var capacity = data.get("capacity", 10)
+
+	# Get visual config from station_types.json
+	var type_info = station_types.get(stype, {})
+	var color = Color.html(type_info.get("color", "#888888"))
+
+	node.setup(station_id, stype, label, capacity, color)
+	add_child(node)
+	station_nodes[station_id] = node
+
+
+func _add_waypoints() -> void:
+	# Central waypoints for pathfinding
+	var waypoints = {
+		"wp_center": Vector2(8, 6),
+		"wp_top": Vector2(8, 3),
+		"wp_left": Vector2(3, 6),
+		"wp_right": Vector2(13, 6),
+		"wp_bottom": Vector2(8, 10),
+	}
+	for wp_id in waypoints:
+		nav.add_node(wp_id, iso.grid_to_screen(waypoints[wp_id]))
+
+
+func _build_paths() -> void:
+	# Connect all stations through waypoints for pathfinding
+	# Hub-and-spoke: everything connects through center
+	var center_connections = {
+		"intake": ["wp_left", "wp_center"],
+		"dispatcher": ["wp_center"],
+		"supervisor": ["wp_top", "wp_center"],
+		"error-chamber": ["wp_left", "wp_bottom"],
+		"output-dock": ["wp_right", "wp_center"],
+	}
+
+	# Fixed station paths
+	for station_id in center_connections:
+		if nav.get_position(station_id) != Vector2.ZERO:
+			var path = [station_id] + center_connections[station_id]
+			nav.add_path(path)
+
+	# Dynamic stations connect through bottom waypoint
+	for station_id in WorldState.stations:
+		if not FIXED_POSITIONS.has(station_id):
+			if nav.get_position(station_id) != Vector2.ZERO:
+				nav.add_path([station_id, "wp_bottom", "wp_center"])
+
+	# Connect waypoints to each other
+	nav.add_path(["wp_left", "wp_center", "wp_right"])
+	nav.add_path(["wp_top", "wp_center", "wp_bottom"])
+
+
+func _on_station_changed(station_id: String) -> void:
+	# Station data updated from backend — node updates itself via its own signal handler
+	pass
 
 
 func _on_worker_changed(worker_id: String, is_new: bool) -> void:
@@ -105,7 +180,6 @@ func _spawn_agent(worker_id: String) -> void:
 	var agent_scn = load("res://scenes/agents/blob_agent.tscn")
 	var agent = agent_scn.instantiate()
 
-	# Assign a Claude-palette color based on worker ID hash
 	var colors = [
 		Color.html("#d4836b"),  # terracotta
 		Color.html("#e8a87c"),  # warm orange
@@ -117,8 +191,14 @@ func _spawn_agent(worker_id: String) -> void:
 	var color_index = worker_id.hash() % colors.size()
 	agent.setup(worker_id, nav, colors[color_index])
 
-	# Start at intake station
-	var start_pos = nav.get_position("intake")
+	# Position agent at their worker station if it exists, otherwise intake
+	var worker_station_id = "station-" + worker_id
+	var start_pos = nav.get_position(worker_station_id)
+	if start_pos == Vector2.ZERO:
+		start_pos = nav.get_position("intake")
+	if start_pos == Vector2.ZERO:
+		# Fallback: center of screen
+		start_pos = iso.grid_to_screen(Vector2(8, 6))
 	agent.position = start_pos
 
 	add_child(agent)
@@ -128,7 +208,6 @@ func _spawn_agent(worker_id: String) -> void:
 func _on_filters_changed() -> void:
 	for worker_id in agent_nodes:
 		var agent_node = agent_nodes[worker_id]
-		# Find matching agent data (agent id may differ from worker_id)
 		var agent_data: Dictionary = {}
 		for agent_id in WorldState.agents:
 			var data = WorldState.agents[agent_id]

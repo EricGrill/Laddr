@@ -46,5 +46,23 @@
     "color": "#e74c3c",
     "icon": "error_bin",
     "description": "Failed jobs land here"
+  },
+  "dispatcher": {
+    "label": "Dispatch",
+    "color": "#85c1e9",
+    "icon": "dispatch_hub",
+    "description": "Routes jobs to appropriate stations"
+  },
+  "llm": {
+    "label": "LLM Worker",
+    "color": "#a8d8b9",
+    "icon": "research_pod",
+    "description": "LLM reasoning and inference"
+  },
+  "tool": {
+    "label": "Tool Worker",
+    "color": "#f5b041",
+    "icon": "terminal_desk",
+    "description": "Tool and MCP execution"
   }
 }
