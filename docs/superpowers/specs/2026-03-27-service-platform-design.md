@@ -88,8 +88,8 @@ class ServiceDefinition:
 
 ```python
 class ServiceRegistry:
-    def __init__(self, config_path: str, mcp_providers: dict)
-    async def discover(self) -> None            # connect to MCPs, merge catalog
+    def __init__(self, config_path: str, redis_client)
+    async def discover(self) -> None            # read worker MCP data from Redis, merge catalog
     def get_all(self) -> list[ServiceDefinition]
     def get(self, service_id: str) -> ServiceDefinition | None
     def get_available(self) -> list[ServiceDefinition]
@@ -463,12 +463,13 @@ POST /api/services/refresh         — Force MCP rediscovery
 
 ### 4. Agent Prompt Injection
 
-**Integration point:** `lib/laddr/src/laddr/core/worker_process.py` — in the agent build step.
+**Integration point:** `lib/laddr/src/laddr/api/main.py` — in the job submission endpoint.
 
-When `build_agent_config()` constructs an agent for a job:
+When a job is submitted via the API:
 
-1. Call `registry.build_playbook(job)` to get the injection block
-2. Append to agent's `instructions` field
+1. API calls `registry.build_playbook(job)` to get the injection block
+2. Appends playbook to the job's `system_prompt` field before dispatching
+3. Worker receives the job with playbook already embedded — no registry needed on the worker side
 
 **Playbook builder logic:**
 
@@ -506,7 +507,7 @@ def build_playbook(self, job: dict) -> str:
 - Job specifies `mcps: ["nano-banana"]` → inject all services from that MCP
 - No service/MCP specified → inject full catalog (agent decides what to use)
 
-**Token budget:** Each playbook targets 200-400 tokens. With 7 services, full injection is ~2-3K tokens.
+**Token budget:** Each playbook is roughly 300-500 tokens. With 7 services, full injection is ~3-4K tokens — well within budget for capable models but worth noting for smaller context windows.
 
 ### 5. Dashboard UI
 
@@ -534,7 +535,16 @@ def build_playbook(self, job: dict) -> str:
 - Text area for the job prompt/instructions
 - Priority selector (low/normal/high/critical)
 - Optional: timeout override
-- Submit button creates a job via `POST /api/jobs` with the service context
+- Submit button creates a job via `POST /api/prompts` with the service context:
+  ```json
+  {
+    "prompt": "Generate a hero image for the Q1 blog post...",
+    "services": ["image-generation"],
+    "priority": "normal",
+    "timeout": 300
+  }
+  ```
+  The API enriches the job with the playbook before dispatching.
 
 **Playbook Drawer:**
 - Slide-out panel from the right
@@ -544,13 +554,63 @@ def build_playbook(self, job: dict) -> str:
 
 **Sidebar update:** Add "Services" link to `dashboard/src/components/Sidebar.tsx`.
 
+## MCP Connection Ownership
+
+The API server does not currently connect to MCP servers — workers do. For v1, the registry uses a **hybrid approach**:
+
+- **Availability** is determined from worker heartbeats in Redis. Workers already report their `mcps` list (e.g., `["holocron", "nano-banana"]`). If at least one alive worker reports an MCP, the services using that MCP are marked `available: true`.
+- **Tool schemas** are cached from workers. When a worker first connects and discovers its MCP tools, it publishes the tool schemas to Redis alongside its capabilities. The registry reads these cached schemas. This avoids the API process needing its own MCP connections.
+- **Playbooks and metadata** come entirely from `services.yml` — no MCP connection needed.
+
+This means the API process has zero MCP dependencies. If no workers are online, all services show as `unavailable` but their playbooks and descriptions remain intact.
+
+**Future option:** If direct API-to-MCP connections become valuable (e.g., for real-time tool schema validation without workers), that can be added later without changing the registry interface.
+
+## Tool Name Matching
+
+MCP tool providers prefix tool names with the server name when registering (e.g., `nano-banana_generate_image`). The registry matches using **original (unprefixed) tool names** from MCP discovery. The `services.yml` config uses unprefixed names (e.g., `generate_image`), and the merge logic strips the server prefix before matching.
+
+When a YAML config lists a tool that MCP discovery does not expose:
+- The tool is kept in the service's tool list (for documentation purposes)
+- It is logged as a warning at discovery time
+- Its `tool_schemas` entry is set to `null`
+
+## Playbook Injection Integration
+
+The playbook is injected at the **API level**, not the worker level. When a job is submitted:
+
+1. The API's job submission endpoint calls `registry.build_playbook(job)`
+2. The playbook text is appended to the job's `system_prompt` field in the job payload
+3. The job is dispatched to a worker with the playbook already embedded
+4. The worker's `build_agent_config()` reads `system_prompt` and passes it to the agent as-is
+
+This keeps the `ServiceRegistry` in the API process only — workers do not need their own registry instance.
+
+## Authentication
+
+- `GET /api/services` and `GET /api/services/{id}` — require valid session or API key (same as existing endpoints)
+- `GET /api/services/{id}/tools` — require valid session or API key
+- `POST /api/services/refresh` — require admin role (forces re-read of worker MCP data from Redis)
+
+Error responses follow existing API conventions:
+- `404 {"error": "Service not found", "service_id": "unknown-id"}`
+- `401 {"error": "Authentication required"}`
+- `403 {"error": "Admin access required"}`
+
+## Config Hot-Reload
+
+The `services.yml` file is re-read on every refresh cycle (every 60s) and on manual refresh via `POST /api/services/refresh`. Changes to playbooks, categories, or service definitions take effect without a restart.
+
+The refresh runs as a background `asyncio` task spawned in the API's `lifespan()` function. Catalog updates use copy-on-write: the refresh builds a complete new catalog dict, then atomically swaps it in. API reads never see a half-updated catalog.
+
 ## Startup & Refresh Flow
 
-1. **API startup:** `ServiceRegistry(config_path, mcp_providers)` → loads YAML → calls `discover()`
-2. **Discovery:** For each unique MCP in config, connect → list tools → match against config tool lists → set `available` and `tool_schemas`
-3. **Periodic refresh:** Every 60 seconds, re-run discovery. Update availability and schemas. Log changes.
-4. **Manual refresh:** `POST /api/services/refresh` triggers immediate rediscovery.
-5. **Graceful degradation:** If an MCP is unreachable during discovery, mark its services as `available: false`. Config data (name, playbook, etc.) remains intact. Agents still get the playbook but with a note that tools are currently unavailable.
+1. **API startup:** `ServiceRegistry(config_path)` → loads YAML → reads worker MCP data from Redis → builds initial catalog
+2. **Availability check:** For each MCP referenced in config, check if any alive worker in Redis reports that MCP. Set `available` accordingly.
+3. **Schema population:** Read cached tool schemas from Redis (published by workers during their MCP discovery).
+4. **Periodic refresh:** Every 60 seconds, a background asyncio task re-reads `services.yml`, re-checks worker heartbeats, and atomically swaps in the updated catalog.
+5. **Manual refresh:** `POST /api/services/refresh` triggers immediate re-read and re-check.
+6. **Graceful degradation:** If no workers report an MCP, mark its services as `available: false`. Config data (name, playbook, etc.) remains intact. Agents still get the playbook but with a note that tools are currently unavailable.
 
 ## Initial Service Catalog
 
