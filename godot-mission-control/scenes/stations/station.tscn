@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/stations/station_controller.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/stations/station_effects.gd" id="2"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_placeholder"]
 size = Vector2(60, 40)
@@ -35,3 +36,6 @@ text = ""
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="ClickArea"]
 shape = SubResource("RectangleShape2D_placeholder")
+
+[node name="StationEffects" type="Node" parent="."]
+script = ExtResource("2")

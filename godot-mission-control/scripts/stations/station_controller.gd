@@ -10,6 +10,8 @@ var queue_depth: int = 0
 var capacity: int = 1
 var state: String = "idle"
 var _original_color: Color = Color.GRAY
+var _packet_nodes: Array = []
+const MAX_VISIBLE_PACKETS = 5
 
 @onready var label_node: Label = $Label
 @onready var sprite_node: ColorRect = $Sprite
@@ -36,6 +38,10 @@ func _ready() -> void:
 
 	if click_area:
 		click_area.input_event.connect(_on_click_area_input)
+
+	var effects = get_node_or_null("StationEffects")
+	if effects:
+		effects.setup(station_type, capacity)
 
 
 func _on_station_changed(changed_id: String) -> void:
@@ -67,6 +73,10 @@ func _update_from_data(data: Dictionary) -> void:
 			sprite_node.color = Color.html("#f5b041")  # yellow
 		else:
 			sprite_node.color = _original_color
+
+	var effects = get_node_or_null("StationEffects")
+	if effects:
+		effects.update_state(state, queue_depth)
 
 
 func _on_click_area_input(_viewport: Node, event: InputEvent, _shape_idx: int) -> void:
