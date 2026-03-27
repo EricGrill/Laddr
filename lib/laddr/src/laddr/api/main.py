@@ -16,6 +16,7 @@ from datetime import datetime
 import importlib
 import json
 import logging
+from pathlib import Path
 import time
 import uuid
 from typing import Any
@@ -145,6 +146,17 @@ class ModelAliasRequest(BaseModel):
     family: str = ""
 
 
+class DashboardLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class DashboardCreateUserRequest(BaseModel):
+    username: str
+    password: str
+    role: str = "read_only"
+
+
 # Global services
 config: LaddrConfig
 factory: BackendFactory
@@ -152,11 +164,14 @@ database: Any
 message_bus: Any
 _db_executor: Any = None  # ThreadPoolExecutor for non-blocking DB calls
 
+from laddr.core.service_registry import ServiceRegistry
+service_registry: ServiceRegistry | None = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize and cleanup services."""
-    global config, factory, database, message_bus, _db_executor
+    global config, factory, database, message_bus, _db_executor, service_registry
     from concurrent.futures import ThreadPoolExecutor
 
     # Load configuration
@@ -169,6 +184,7 @@ async def lifespan(app: FastAPI):
 
     # Create database tables
     database.create_tables()
+    database.bootstrap_dashboard_users(config.laddr_dash_users)
 
     # Create thread pool executor for non-blocking database operations
     _db_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="db")
@@ -185,11 +201,31 @@ async def lifespan(app: FastAPI):
         "verify_ws_key": verify_websocket_api_key,
     })
 
+    global service_registry
+    config_path = str(Path(__file__).resolve().parent.parent / "config" / "services.yml")
+    service_registry = ServiceRegistry(config_path=config_path, redis_client=redis_client)
+    try:
+        await service_registry.discover()
+    except Exception:
+        logger.warning("Initial service discovery failed — services may show as unavailable")
+
+    async def _refresh_services():
+        while True:
+            await asyncio.sleep(60)
+            try:
+                await service_registry.refresh()
+            except Exception:
+                logger.exception("Service registry refresh failed")
+
+    refresh_task = asyncio.create_task(_refresh_services())
+
     logger.info("Laddr API server started")
     logger.info(f"Database: {config.database_url}")
     logger.info(f"Queue: {config.queue_backend}")
 
     yield
+
+    refresh_task.cancel()
 
     # Shutdown executor
     if _db_executor:
@@ -312,6 +348,53 @@ require_api_key = Depends(verify_api_key)
 
 # Mount sub-routers
 app.include_router(mission_control_router)
+
+
+def _get_dashboard_identity(request: Request) -> dict[str, str]:
+    username = (request.headers.get("X-Dashboard-User") or "").strip()
+    role = (request.headers.get("X-Dashboard-Role") or "read_only").strip()
+    session_id = (request.headers.get("X-Dashboard-Session-Id") or "").strip()
+    return {
+        "username": username,
+        "role": "admin" if role == "admin" else "read_only",
+        "session_id": session_id,
+    }
+
+
+def _require_dashboard_identity(request: Request) -> dict[str, str]:
+    identity = _get_dashboard_identity(request)
+    if not identity["username"] or not identity["session_id"]:
+        raise HTTPException(status_code=401, detail="Missing dashboard session identity headers")
+    return identity
+
+
+def _require_admin_dashboard_user(request: Request) -> dict[str, str]:
+    identity = _require_dashboard_identity(request)
+    if identity["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return identity
+
+
+@app.middleware("http")
+async def enforce_read_only_access(request: Request, call_next):
+    write_methods = {"POST", "PUT", "PATCH", "DELETE"}
+    write_exempt_paths = {
+        "/api/auth/sessions/start",
+        "/api/auth/sessions/end",
+    }
+    path = request.url.path
+    if (
+        path.startswith("/api/")
+        and request.method.upper() in write_methods
+        and path not in write_exempt_paths
+    ):
+        role = (request.headers.get("X-Dashboard-Role") or "").strip()
+        if role == "read_only":
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Read-only users cannot perform write actions"},
+            )
+    return await call_next(request)
 
 
 def _merge_batch_inputs(existing_inputs: dict | None, new_tasks: list[dict[str, Any]]) -> dict:
@@ -535,6 +618,88 @@ async def health():
             },
         },
     }
+
+
+@app.post("/api/auth/sessions/start")
+async def start_dashboard_session(request: Request):
+    """Start or refresh a dashboard user session."""
+    identity = _require_dashboard_identity(request)
+    return database.start_user_session(
+        session_id=identity["session_id"],
+        username=identity["username"],
+        role=identity["role"],
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("User-Agent"),
+    )
+
+
+@app.post("/api/auth/sessions/end")
+async def end_dashboard_session(request: Request):
+    """End a dashboard user session."""
+    identity = _require_dashboard_identity(request)
+    session = database.end_user_session(identity["session_id"])
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
+
+@app.get("/api/admin/sessions")
+async def list_dashboard_sessions(
+    request: Request,
+    limit: int = 100,
+):
+    """List dashboard sessions (admin only)."""
+    _require_admin_dashboard_user(request)
+    safe_limit = max(1, min(limit, 500))
+    return {"sessions": database.list_user_sessions(limit=safe_limit)}
+
+
+@app.post("/api/auth/login")
+async def dashboard_login(request: DashboardLoginRequest):
+    user = database.verify_dashboard_user(request.username, request.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    return {
+        "username": user["username"],
+        "role": user["role"],
+    }
+
+
+@app.get("/api/admin/users")
+async def list_dashboard_users(request: Request):
+    _require_admin_dashboard_user(request)
+    return {"users": database.list_dashboard_users()}
+
+
+@app.post("/api/admin/users")
+async def create_dashboard_user(request: Request, body: DashboardCreateUserRequest):
+    _require_admin_dashboard_user(request)
+    username = body.username.strip()
+    password = body.password
+    if len(username) < 3:
+        raise HTTPException(status_code=400, detail="Username must be at least 3 characters")
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    try:
+        user = database.create_dashboard_user(username=username, password=password, role=body.role)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return user
+
+
+@app.delete("/api/admin/users/{username}")
+async def delete_dashboard_user(request: Request, username: str):
+    identity = _require_admin_dashboard_user(request)
+    target = username.strip()
+    if target == identity["username"]:
+        raise HTTPException(status_code=400, detail="You cannot delete your own active account")
+    try:
+        deleted = database.delete_dashboard_user(target)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not deleted:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"deleted": True, "username": target}
 
 
 @app.post("/api/jobs")
@@ -2546,6 +2711,64 @@ async def get_worker_capability(worker_id: str):
         raise HTTPException(status_code=503, detail="Redis not available")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/services", dependencies=[require_api_key])
+async def list_services():
+    """List all platform services with availability status."""
+    if not service_registry:
+        raise HTTPException(status_code=503, detail="Service registry not initialized")
+    services = service_registry.get_all()
+    return {
+        "services": [
+            {"id": s.id, "name": s.name, "category": s.category, "icon": s.icon,
+             "description": s.description, "mcp": s.mcp, "tools": s.tools, "available": s.available}
+            for s in services
+        ],
+        "summary": {
+            "total": len(services),
+            "available": sum(1 for s in services if s.available),
+            "unavailable": sum(1 for s in services if not s.available),
+            "last_discovered": service_registry.last_discovered,
+        },
+    }
+
+
+@app.get("/api/services/{service_id}", dependencies=[require_api_key])
+async def get_service(service_id: str):
+    """Get a single service with full playbook and tool schemas."""
+    if not service_registry:
+        raise HTTPException(status_code=503, detail="Service registry not initialized")
+    svc = service_registry.get(service_id)
+    if not svc:
+        raise HTTPException(status_code=404, detail=f"Service not found: {service_id}")
+    return {
+        "id": svc.id, "name": svc.name, "category": svc.category, "icon": svc.icon,
+        "description": svc.description, "mcp": svc.mcp, "playbook": svc.playbook,
+        "tools": svc.tools, "available": svc.available, "tool_schemas": svc.tool_schemas,
+    }
+
+
+@app.get("/api/services/{service_id}/tools", dependencies=[require_api_key])
+async def get_service_tools(service_id: str):
+    """Get tool schemas for a service."""
+    if not service_registry:
+        raise HTTPException(status_code=503, detail="Service registry not initialized")
+    svc = service_registry.get(service_id)
+    if not svc:
+        raise HTTPException(status_code=404, detail=f"Service not found: {service_id}")
+    return {"service_id": svc.id, "tools": svc.tools, "tool_schemas": svc.tool_schemas}
+
+
+@app.post("/api/services/refresh", dependencies=[require_api_key])
+async def refresh_services(request: Request):
+    """Force service registry refresh. Requires admin role."""
+    _require_admin_dashboard_user(request)
+    if not service_registry:
+        raise HTTPException(status_code=503, detail="Service registry not initialized")
+    await service_registry.refresh()
+    available = service_registry.get_available()
+    return {"status": "refreshed", "available_count": len(available), "total_count": len(service_registry.get_all())}
 
 
 @app.post("/api/templates", dependencies=[require_api_key])

@@ -27,10 +27,11 @@ class ServiceDefinition:
 class ServiceRegistry:
     """Registry of platform services loaded from a YAML config file."""
 
-    def __init__(self, config_path: str | Path) -> None:
+    def __init__(self, config_path: str | Path, redis_client=None) -> None:
         self._config_path = Path(config_path)
         self._services: dict[str, ServiceDefinition] = {}
         self.last_discovered: str | None = None
+        self._redis = redis_client
         self._load()
 
     # ------------------------------------------------------------------
