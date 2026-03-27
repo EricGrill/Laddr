@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/mission_panel_controller.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/ui/alert_feed.gd" id="2"]
 
 [node name="MissionPanel" type="Control"]
 layout_mode = 1
@@ -44,3 +45,12 @@ theme_override_font_sizes/font_size = 14
 
 [node name="StationList" type="VBoxContainer" parent="PanelContainer/VBox"]
 layout_mode = 2
+
+[node name="AlertsHeader" type="Label" parent="PanelContainer/VBox"]
+layout_mode = 2
+text = "Alerts"
+theme_override_font_sizes/font_size = 14
+
+[node name="AlertFeed" type="VBoxContainer" parent="PanelContainer/VBox"]
+layout_mode = 2
+script = ExtResource("2")
