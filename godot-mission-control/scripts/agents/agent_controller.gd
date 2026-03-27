@@ -1,16 +1,18 @@
 extends CharacterBody2D
 ## Agent FSM brain. Subscribes to WorldState signals and drives mover/animator.
-## Extends CharacterBody2D for move_and_slide() collision support.
+## Maps to a backend worker — reflects worker status, active jobs, and movement.
 
 enum State { IDLE, MOVING, PICKING_UP, CARRYING, WORKING, DELIVERING, BLOCKED, ERRORED, OFFLINE }
 
 @export var worker_id: String = ""
-@export var agent_color: Color = Color.html("#d4836b")  # Claude terracotta
+@export var agent_color: Color = Color.html("#d4836b")
 
 var current_state: State = State.IDLE
 var current_job_id: String = ""
 var target_station_id: String = ""
 var role: String = ""
+var _worker_status: String = "online"
+var _active_jobs: int = 0
 
 @onready var mover: Node = $AgentMover
 @onready var animator: Node = $AgentAnimator
@@ -24,43 +26,39 @@ var _nav_graph: NavGraph
 var _pickup_timer: float = 0.0
 var _pickup_duration: float = 0.5
 
+# Activity simulation
+var _activity_timer: float = 0.0
+var _activity_interval: float = 4.0
+var _home_station_id: String = ""
+
 # Preloaded sprite textures per role
-var _sprite_textures: Dictionary = {}  # "role_direction" -> Texture2D
+var _sprite_textures: Dictionary = {}
 
 const SPRITE_BASE = "res://assets/sprites/agents/"
 const ROLES = ["router", "researcher", "coder", "reviewer", "deployer", "supervisor"]
 const DIRECTIONS = ["front", "iso_left", "iso_right"]
+
+# Stations agents visit when busy
+const WORK_STATIONS = ["dispatcher", "intake", "output-dock"]
 
 
 func setup(id: String, nav: NavGraph, color: Color) -> void:
 	worker_id = id
 	_nav_graph = nav
 	agent_color = color
+	_home_station_id = "station-" + id
 
 
 func _ready() -> void:
-	# Wire animator
 	if animator:
 		animator.body_sprite = body
 		animator.agent_sprite = agent_sprite
 		animator.mover = mover
 
-	# Wire mover
 	if mover:
 		mover.arrived.connect(_on_arrived)
 
-	# Subscribe to WorldState
-	WorldState.job_assigned.connect(_on_job_assigned)
-	WorldState.job_completed.connect(_on_job_completed)
-	WorldState.job_failed.connect(_on_job_failed)
-	WorldState.job_handoff.connect(_on_job_handoff)
-	WorldState.agent_changed.connect(_on_agent_changed)
-	WorldState.snapshot_loaded.connect(_on_snapshot_loaded)
-
-	if click_area:
-		click_area.input_event.connect(_on_click_area_input)
-
-	# Style the agent label
+	# Style label
 	if label_node:
 		var lbl_settings = LabelSettings.new()
 		lbl_settings.font_size = 11
@@ -69,14 +67,23 @@ func _ready() -> void:
 		lbl_settings.outline_color = Color(0, 0, 0, 0.7)
 		label_node.label_settings = lbl_settings
 
-	# Hide job packet initially
+	WorldState.job_assigned.connect(_on_job_assigned)
+	WorldState.job_completed.connect(_on_job_completed)
+	WorldState.job_failed.connect(_on_job_failed)
+	WorldState.job_handoff.connect(_on_job_handoff)
+	WorldState.agent_changed.connect(_on_agent_changed)
+	WorldState.snapshot_loaded.connect(_on_snapshot_loaded)
+	WorldState.worker_changed.connect(_on_worker_changed)
+
+	if click_area:
+		click_area.input_event.connect(_on_click_area_input)
+
 	if job_packet_visual:
 		job_packet_visual.visible = false
 
 	_set_state(State.IDLE)
-
-	# Load default sprite immediately so agent is visible before role assignment
 	_apply_role_visuals()
+	_activity_timer = randf_range(1.0, 5.0)
 
 
 func _process(delta: float) -> void:
@@ -86,9 +93,104 @@ func _process(delta: float) -> void:
 		if _pickup_timer <= 0:
 			_transition_to_carrying()
 
-	# Update label
+	# Update label with worker info
 	if label_node:
-		label_node.text = worker_id.left(8)
+		var worker_data = WorldState.workers.get(worker_id, {})
+		var name = worker_data.get("name", worker_id.left(10))
+		var status = worker_data.get("status", "idle")
+		var active = worker_data.get("activeJobs", 0)
+		if active > 0:
+			label_node.text = "%s (%d jobs)" % [name, active]
+		else:
+			label_node.text = "%s - %s" % [name, status]
+
+	# Activity simulation — make agents move and do things based on worker state
+	_activity_timer -= delta
+	if _activity_timer <= 0:
+		_activity_timer = randf_range(3.0, 7.0)
+		_simulate_activity()
+
+
+func _simulate_activity() -> void:
+	if current_state == State.MOVING or current_state == State.CARRYING:
+		return  # Already moving
+
+	var worker_data = WorldState.workers.get(worker_id, {})
+	var active = worker_data.get("activeJobs", 0)
+	var status = worker_data.get("status", "online")
+
+	if status == "offline":
+		_set_state(State.OFFLINE)
+		return
+
+	if active > 0 or status == "busy":
+		# Worker is busy — simulate job processing
+		_simulate_busy()
+	else:
+		# Worker is idle — occasional wandering
+		_simulate_idle()
+
+
+func _simulate_busy() -> void:
+	# Pick a random work flow: go to dispatcher, pick up, carry to home station
+	var destinations = []
+
+	# Build list of reachable stations
+	for sid in ["dispatcher", "intake", "output-dock"]:
+		if _nav_graph and _nav_graph.get_position(sid) != Vector2.ZERO:
+			destinations.append(sid)
+
+	if _home_station_id != "" and _nav_graph and _nav_graph.get_position(_home_station_id) != Vector2.ZERO:
+		destinations.append(_home_station_id)
+
+	if destinations.is_empty():
+		# Just show working emote
+		if animator:
+			animator.show_emote("lightbulb")
+		return
+
+	# Alternate between picking up from dispatcher and working at home station
+	var target = destinations[randi() % destinations.size()]
+
+	# Show carrying a packet while moving
+	if job_packet_visual:
+		job_packet_visual.visible = true
+		# Load a random priority packet sprite
+		var priorities = ["normal", "high", "critical"]
+		var pri = priorities[randi() % priorities.size()]
+		var tex = load("res://assets/sprites/packets/packet_%s.png" % pri)
+		if tex:
+			job_packet_visual.texture = tex
+
+	_move_to_station(target)
+	_set_state(State.CARRYING)
+
+	if animator:
+		var emotes = ["lightbulb", "thinking", "success"]
+		animator.show_emote(emotes[randi() % emotes.size()])
+
+
+func _simulate_idle() -> void:
+	# Occasionally wander to a nearby station and back
+	if randf() < 0.4:
+		# Stay put, just fidget
+		if animator:
+			if randf() < 0.5:
+				animator.play_squash()
+			else:
+				animator.show_emote("thinking")
+		return
+
+	# Wander to a random reachable station
+	var destinations = []
+	for sid in ["dispatcher", "intake", _home_station_id]:
+		if _nav_graph and _nav_graph.get_position(sid) != Vector2.ZERO:
+			destinations.append(sid)
+
+	if not destinations.is_empty():
+		var target = destinations[randi() % destinations.size()]
+		_move_to_station(target)
+		_set_state(State.MOVING)
 
 
 func _set_state(new_state: State) -> void:
@@ -102,14 +204,11 @@ func _set_state(new_state: State) -> void:
 # --- Signal handlers ---
 
 func _on_job_assigned(job_id: String, agent_id: String, station_id: String) -> void:
-	# Find which worker this agent represents
 	if not _is_my_agent(agent_id):
 		return
 	current_job_id = job_id
 	target_station_id = station_id
-	# Update carried packet sprite based on job priority
 	_update_carried_packet()
-	# Move to the station where the job is
 	_move_to_station(station_id)
 	_set_state(State.MOVING)
 
@@ -117,19 +216,19 @@ func _on_job_assigned(job_id: String, agent_id: String, station_id: String) -> v
 func _on_job_completed(job_id: String) -> void:
 	if job_id != current_job_id:
 		return
-	# Deliver to output dock
-	target_station_id = "output_dock"
-	_move_to_station("output_dock")
+	target_station_id = "output-dock"
+	_move_to_station("output-dock")
 	_set_state(State.DELIVERING)
 	if animator:
 		animator.play_stretch()
+		animator.show_emote("success")
 
 
 func _on_job_failed(job_id: String, _reason: String) -> void:
 	if job_id != current_job_id:
 		return
-	target_station_id = "error_chamber"
-	_move_to_station("error_chamber")
+	target_station_id = "error-chamber"
+	_move_to_station("error-chamber")
 	_set_state(State.ERRORED)
 	if animator:
 		animator.show_emote("error")
@@ -161,8 +260,13 @@ func _on_agent_changed(agent_id: String) -> void:
 				mover.stop()
 
 
+func _on_worker_changed(wid: String, _is_new: bool) -> void:
+	if wid != worker_id:
+		return
+	# Worker data updated — our _process loop will pick up the changes
+
+
 func _on_snapshot_loaded() -> void:
-	# Find our agent data and sync state
 	for agent_id in WorldState.agents:
 		if _is_my_agent(agent_id):
 			var data = WorldState.agents[agent_id]
@@ -171,7 +275,6 @@ func _on_snapshot_loaded() -> void:
 			if job_id != "":
 				current_job_id = job_id
 				_update_carried_packet()
-				# If agent has a job and station, go to working state
 				var station = data.get("currentStationId", "")
 				if station != "":
 					_move_to_station(station)
@@ -183,21 +286,16 @@ func _on_snapshot_loaded() -> void:
 func _apply_role_visuals() -> void:
 	if not agent_sprite:
 		return
-	# If no role assigned yet, pick a default based on worker_id hash
 	var actual_role = role if role != "" else ROLES[worker_id.hash() % ROLES.size()]
-	# Load sprite textures for this role
 	for dir in DIRECTIONS:
 		var path = SPRITE_BASE + actual_role + "/" + actual_role + "_" + dir + ".png"
 		var tex = load(path)
 		if tex:
 			_sprite_textures[dir] = tex
-	# Set initial front-facing texture
 	if _sprite_textures.has("front"):
 		agent_sprite.texture = _sprite_textures["front"]
-	# Supervisor is slightly larger
 	if actual_role == "supervisor":
 		agent_sprite.scale = Vector2(0.55, 0.55)
-	# Pass textures to animator for direction switching
 	if animator:
 		animator.set_role_textures(_sprite_textures)
 
@@ -216,19 +314,17 @@ func _update_carried_packet() -> void:
 func _on_arrived() -> void:
 	match current_state:
 		State.MOVING:
-			# Arrived at pickup location
-			_set_state(State.PICKING_UP)
-			_pickup_timer = _pickup_duration
+			_set_state(State.IDLE)
 			if animator:
 				animator.play_squash()
 		State.CARRYING:
-			# Arrived at work station
 			_set_state(State.WORKING)
 			if animator:
 				animator.play_squash()
 				animator.show_emote("lightbulb")
+			# After working briefly, go back idle
+			_activity_timer = randf_range(2.0, 5.0)
 		State.DELIVERING:
-			# Delivered job, go idle
 			current_job_id = ""
 			if job_packet_visual:
 				job_packet_visual.visible = false
@@ -237,7 +333,6 @@ func _on_arrived() -> void:
 				animator.play_stretch()
 				animator.show_emote("success")
 		State.ERRORED:
-			# Dropped off at error chamber
 			current_job_id = ""
 			if job_packet_visual:
 				job_packet_visual.visible = false
@@ -245,11 +340,9 @@ func _on_arrived() -> void:
 
 
 func _transition_to_carrying() -> void:
-	# After pickup, find the job's target station and carry there
 	var job_data = WorldState.jobs.get(current_job_id, {})
 	var target = job_data.get("currentStationId", "")
 	if target == "" or target == target_station_id:
-		# Job might need to go to dispatcher first
 		target = "dispatcher"
 	target_station_id = target
 	_move_to_station(target)
@@ -261,11 +354,9 @@ func _transition_to_carrying() -> void:
 func _move_to_station(station_id: String) -> void:
 	if not _nav_graph:
 		return
-	# Find closest station to current position to use as path start
 	var from_id = _find_nearest_station_id()
 	var path = _nav_graph.find_path(from_id, station_id)
 	if path.is_empty():
-		# Fallback: move directly
 		var target_pos = _nav_graph.get_position(station_id)
 		if target_pos != Vector2.ZERO:
 			path = [target_pos]
@@ -276,7 +367,6 @@ func _move_to_station(station_id: String) -> void:
 func _find_nearest_station_id() -> String:
 	var best_id = ""
 	var best_dist = INF
-	# Check all nav graph nodes
 	for station_id in WorldState.stations:
 		var pos = _nav_graph.get_position(station_id)
 		if pos == Vector2.ZERO:
@@ -285,14 +375,10 @@ func _find_nearest_station_id() -> String:
 		if dist < best_dist:
 			best_dist = dist
 			best_id = station_id
-	# Also check waypoints (they might be closer)
 	return best_id if best_id != "" else "intake"
 
 
 func _is_my_agent(agent_id: String) -> bool:
-	# Match agent to this worker node.
-	# The backend uses agent IDs that correspond to worker IDs.
-	# Check if the agent's worker matches our worker_id.
 	var agent_data = WorldState.agents.get(agent_id, {})
 	var agent_worker = agent_data.get("workerId", agent_id)
 	return agent_worker == worker_id or agent_id == worker_id

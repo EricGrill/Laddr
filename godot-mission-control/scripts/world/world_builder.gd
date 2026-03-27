@@ -86,6 +86,9 @@ func _on_snapshot_loaded() -> void:
 	_snapshot_processed = true
 	_build_from_snapshot()
 
+	# Distribute jobs to stations for queue visuals
+	_distribute_jobs()
+
 	for worker_id in WorldState.workers:
 		_spawn_agent(worker_id)
 
@@ -214,6 +217,46 @@ func _auto_fit_camera() -> void:
 		camera._target_position = center
 		camera.zoom = Vector2(fit_zoom, fit_zoom)
 		camera._target_zoom = Vector2(fit_zoom, fit_zoom)
+
+
+func _distribute_jobs() -> void:
+	# Map job states to stations for visual queue display
+	var station_jobs: Dictionary = {}  # station_id -> [job_ids]
+	for jid in WorldState.jobs:
+		var job = WorldState.jobs[jid]
+		var job_state = job.get("state", "queued")
+		var station_id = job.get("currentStationId", "")
+
+		# If job has an assigned station, use it
+		if station_id != null and station_id != "" and WorldState.stations.has(station_id):
+			if not station_jobs.has(station_id):
+				station_jobs[station_id] = []
+			station_jobs[station_id].append(jid)
+			continue
+
+		# Otherwise distribute based on state
+		var target = ""
+		match job_state:
+			"queued":
+				target = "intake"
+			"processing":
+				target = "dispatcher"
+			"completed":
+				target = "output-dock"
+			"failed":
+				target = "error-chamber"
+
+		if target != "" and WorldState.stations.has(target):
+			if not station_jobs.has(target):
+				station_jobs[target] = []
+			station_jobs[target].append(jid)
+
+	# Update station data with job lists so queue visuals work
+	for sid in station_jobs:
+		if WorldState.stations.has(sid):
+			WorldState.stations[sid]["activeJobIds"] = station_jobs[sid]
+			WorldState.stations[sid]["queueDepth"] = station_jobs[sid].size()
+			WorldState.station_changed.emit(sid)
 
 
 func _on_station_changed(_station_id: String) -> void:

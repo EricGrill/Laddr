@@ -62,9 +62,13 @@ func _update_metrics() -> void:
 		return
 	var m = WorldState.metrics
 	var total_jobs = m.get("totalJobs", WorldState.jobs.size())
-	var active_agents = m.get("activeAgents", WorldState.agents.size())
+	var workers_online = WorldState.workers.size()
 	var errors = m.get("errorCount", 0)
-	var queue_depth = m.get("totalQueueDepth", 0)
-	metrics_label.text = "Jobs: %d | Agents: %d | Queue: %d | Errors: %d" % [
-		total_jobs, active_agents, queue_depth, errors
+	var busy_workers = 0
+	for wid in WorldState.workers:
+		var w = WorldState.workers[wid]
+		if w.get("activeJobs", 0) > 0:
+			busy_workers += 1
+	metrics_label.text = "Jobs: %d | Workers: %d/%d busy | Errors: %d" % [
+		total_jobs, busy_workers, workers_online, errors
 	]

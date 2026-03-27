@@ -49,25 +49,35 @@ func _refresh() -> void:
 
 
 func _show_agent() -> void:
-	var data = WorldState.agents.get(_selected_id, {})
-	if data.is_empty():
-		# Try looking up by worker ID
+	# Show worker data (workers ARE the agents in this system)
+	var worker_data = WorldState.workers.get(_selected_id, {})
+	var agent_data = WorldState.agents.get(_selected_id, {})
+	if agent_data.is_empty():
 		for aid in WorldState.agents:
 			if WorldState.agents[aid].get("workerId", aid) == _selected_id:
-				data = WorldState.agents[aid]
+				agent_data = WorldState.agents[aid]
 				break
 
-	title_label.text = "Agent: %s" % _selected_id.left(12)
+	var name = worker_data.get("name", _selected_id.left(12))
+	title_label.text = "Worker: %s" % name
+
 	var text = ""
-	text += "[b]Role:[/b] %s\n" % data.get("role", "unknown")
-	text += "[b]State:[/b] %s\n" % data.get("state", "unknown")
-	text += "[b]Current Job:[/b] %s\n" % str(data.get("currentJobId", "none"))
-	text += "[b]Efficiency:[/b] %s%%\n" % str(data.get("efficiency", "—"))
-	var recent = data.get("recentJobIds", [])
-	if not recent.is_empty():
-		text += "[b]Recent Jobs:[/b]\n"
-		for jid in recent.slice(0, 5):
-			text += "  • %s\n" % jid.left(16)
+	text += "[b]Status:[/b] %s\n" % worker_data.get("status", "unknown")
+	text += "[b]Active Jobs:[/b] %d / %d\n" % [
+		worker_data.get("activeJobs", 0),
+		worker_data.get("maxJobs", 4)
+	]
+
+	var caps = worker_data.get("capabilities", [])
+	if not caps.is_empty():
+		text += "[b]Capabilities:[/b]\n"
+		for cap in caps.slice(0, 8):
+			text += "  • %s\n" % str(cap).left(30)
+
+	if not agent_data.is_empty():
+		text += "\n[b]Role:[/b] %s\n" % agent_data.get("role", "worker")
+		text += "[b]Current Job:[/b] %s\n" % str(agent_data.get("currentJobId", "none"))
+
 	details_label.text = text
 
 
@@ -96,11 +106,28 @@ func _show_station() -> void:
 	text += "[b]State:[/b] %s\n" % data.get("state", "idle")
 	text += "[b]Capacity:[/b] %d\n" % data.get("capacity", 0)
 	text += "[b]Queue Depth:[/b] %d\n" % data.get("queueDepth", 0)
+
+	# If it's a worker station, show worker info
+	var wid = data.get("workerId", "")
+	if wid != null and wid != "":
+		var worker = WorldState.workers.get(wid, {})
+		text += "\n[b]Worker:[/b] %s\n" % worker.get("name", wid)
+		text += "[b]Active:[/b] %d / %d jobs\n" % [
+			worker.get("activeJobs", 0), worker.get("maxJobs", 4)]
+		var caps = worker.get("capabilities", [])
+		if not caps.is_empty():
+			text += "[b]Models/Tools:[/b]\n"
+			for cap in caps.slice(0, 6):
+				text += "  • %s\n" % str(cap).left(30)
+
 	var active = data.get("activeJobIds", [])
 	if not active.is_empty():
-		text += "[b]Active Jobs:[/b]\n"
+		text += "\n[b]Active Jobs:[/b]\n"
 		for jid in active.slice(0, 5):
-			text += "  • %s\n" % jid.left(16)
+			var job = WorldState.jobs.get(jid, {})
+			var job_type = job.get("type", "unknown")
+			var job_state = job.get("state", "?")
+			text += "  • %s [%s]\n" % [job_type.left(20), job_state]
 	details_label.text = text
 
 
