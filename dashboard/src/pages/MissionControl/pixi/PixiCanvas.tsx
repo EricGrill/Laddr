@@ -157,7 +157,7 @@ export function PixiCanvas() {
           const w = group[i];
           if (!workerContainers.has(w.id)) {
             const roleColor = getRoleColor(w.capabilities);
-            const wc = createWorker(w.id, roleColor);
+            const wc = createWorker(w.id, roleColor, w.capabilities);
             const pos = workerPosition(layout.x, layout.y, i, group.length);
             setWorkerPosition(wc, pos.x, pos.y);
             workerContainers.set(w.id, wc);
