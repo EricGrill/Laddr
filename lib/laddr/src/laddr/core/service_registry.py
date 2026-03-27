@@ -78,7 +78,7 @@ class ServiceRegistry:
     # Availability discovery
     # ------------------------------------------------------------------
 
-    async def discover(self, redis) -> None:
+    async def discover(self, redis=None) -> None:
         """Read worker heartbeats from Redis and mark services available/unavailable.
 
         Checks ``laddr:workers:registry`` hash. Workers whose ``last_heartbeat``
@@ -86,6 +86,14 @@ class ServiceRegistry:
         worker marks the corresponding service(s) as available.
         """
         import time
+
+        # Re-read config to support hot-reload
+        self._load()
+
+        redis = redis or self._redis
+        if not redis:
+            logger.warning("No Redis client — all services marked unavailable")
+            return
 
         alive_mcps: set[str] = set()
 
@@ -116,7 +124,7 @@ class ServiceRegistry:
 
         self.last_discovered = datetime.now(timezone.utc).isoformat()
 
-    async def refresh(self, redis) -> None:
+    async def refresh(self, redis=None) -> None:
         """Re-run discovery; convenience alias for ``discover()``.
 
         Intended for periodic background refresh calls.
