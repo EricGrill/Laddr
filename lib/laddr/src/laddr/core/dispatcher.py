@@ -117,16 +117,16 @@ class Dispatcher:
                             "skills": w.get("skills", []),
                             "max_concurrent": w.get("max_concurrent", 1),
                         }
-                    # Read the dispatcher's active counter — this reflects
-                    # jobs dispatched but not yet completed, which is the
-                    # correct backpressure signal.
+                    # True load = heartbeat active + pending in worker stream
                     wid = w.get("worker_id", "")
-                    active_key = f"laddr:workers:active:{wid}"
+                    heartbeat_active = w.get("active_jobs", 0)
+                    if isinstance(heartbeat_active, str):
+                        heartbeat_active = int(heartbeat_active)
                     try:
-                        dispatched_active = await self.redis.get(active_key)
-                        w["active_jobs"] = int(dispatched_active or 0)
+                        stream_pending = await self.redis.xlen(worker_stream_key(wid))
                     except Exception:
-                        w["active_jobs"] = w.get("active_jobs", 0)
+                        stream_pending = 0
+                    w["active_jobs"] = heartbeat_active + stream_pending
                     workers.append(w)
             return workers
         except Exception as exc:
