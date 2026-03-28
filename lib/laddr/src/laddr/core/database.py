@@ -10,7 +10,10 @@ from __future__ import annotations
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime
+import hashlib
+import hmac
 import json
+import os
 from typing import Any
 import uuid
 
@@ -120,6 +123,35 @@ class AgentRegistry(Base):
     agent_name = Column(String(255), primary_key=True)
     meta = Column(JSON, nullable=False)  # role, goal, tools, status, host_url, etc.
     last_seen = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UserSession(Base):
+    """Dashboard user session tracking."""
+
+    __tablename__ = "user_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(64), nullable=False, index=True, unique=True)
+    username = Column(String(255), nullable=False, index=True)
+    role = Column(String(50), nullable=False, default="read_only")
+    login_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    logout_at = Column(DateTime, nullable=True, index=True)
+    duration_ms = Column(Integer, nullable=True)
+    ip = Column(String(128), nullable=True)
+    user_agent = Column(String(512), nullable=True)
+
+
+class DashboardUser(Base):
+    """Dashboard user credentials and role."""
+
+    __tablename__ = "dashboard_users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(255), nullable=False, unique=True, index=True)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(50), nullable=False, default="read_only")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
 class DatabaseService:
@@ -523,6 +555,191 @@ class DatabaseService:
                 })
             
             return result
+
+    # User session tracking
+
+    def start_user_session(
+        self,
+        session_id: str,
+        username: str,
+        role: str,
+        ip: str | None = None,
+        user_agent: str | None = None,
+    ) -> dict[str, Any]:
+        """Create (or update) a user session start record."""
+        with self.get_session() as session:
+            existing = session.query(UserSession).filter_by(session_id=session_id).first()
+            now = datetime.utcnow()
+            if existing:
+                existing.username = username
+                existing.role = role
+                existing.login_at = now
+                existing.logout_at = None
+                existing.duration_ms = None
+                existing.ip = ip
+                existing.user_agent = user_agent
+                record = existing
+            else:
+                record = UserSession(
+                    session_id=session_id,
+                    username=username,
+                    role=role,
+                    login_at=now,
+                    ip=ip,
+                    user_agent=user_agent,
+                )
+                session.add(record)
+                session.flush()
+
+            return self._session_to_dict(record)
+
+    def end_user_session(self, session_id: str) -> dict[str, Any] | None:
+        """Finalize a user session and store computed duration."""
+        with self.get_session() as session:
+            record = session.query(UserSession).filter_by(session_id=session_id).first()
+            if not record:
+                return None
+            if record.logout_at is None:
+                now = datetime.utcnow()
+                record.logout_at = now
+                record.duration_ms = int((now - record.login_at).total_seconds() * 1000)
+            return self._session_to_dict(record)
+
+    def list_user_sessions(self, limit: int = 100) -> list[dict[str, Any]]:
+        """List recent user sessions."""
+        with self.get_session() as session:
+            sessions = (
+                session.query(UserSession)
+                .order_by(UserSession.login_at.desc())
+                .limit(limit)
+                .all()
+            )
+            return [self._session_to_dict(record) for record in sessions]
+
+    def _session_to_dict(self, record: UserSession) -> dict[str, Any]:
+        return {
+            "id": record.id,
+            "session_id": record.session_id,
+            "username": record.username,
+            "role": record.role,
+            "login_at": _iso_z(record.login_at),
+            "logout_at": _iso_z(record.logout_at),
+            "duration_ms": record.duration_ms,
+            "is_active": record.logout_at is None,
+            "ip": record.ip,
+            "user_agent": record.user_agent,
+        }
+
+    # Dashboard user management
+
+    def _normalize_role(self, role: str | None) -> str:
+        return "admin" if role == "admin" else "read_only"
+
+    def _hash_password(self, password: str) -> str:
+        """Store salted PBKDF2 hash as `pbkdf2_sha256$iterations$salt_hex$hash_hex`."""
+        iterations = 390000
+        salt = os.urandom(16)
+        digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+        return f"pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}"
+
+    def _verify_password(self, password: str, encoded_hash: str) -> bool:
+        try:
+            algo, iter_s, salt_hex, digest_hex = encoded_hash.split("$", 3)
+            if algo != "pbkdf2_sha256":
+                return False
+            iterations = int(iter_s)
+            salt = bytes.fromhex(salt_hex)
+            expected = bytes.fromhex(digest_hex)
+            actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+            return hmac.compare_digest(actual, expected)
+        except Exception:
+            return False
+
+    def _parse_dash_users_env(self, dash_users: str | None) -> list[dict[str, str]]:
+        parsed: list[dict[str, str]] = []
+        if dash_users:
+            entries = [entry.strip() for entry in dash_users.split(",") if entry.strip()]
+            for entry in entries:
+                username, password, role = (entry.split(":") + ["read_only"])[:3]
+                if username and password:
+                    parsed.append(
+                        {
+                            "username": username.strip(),
+                            "password": password.strip(),
+                            "role": self._normalize_role(role.strip()),
+                        }
+                    )
+        if not parsed:
+            parsed.append({"username": "admin", "password": "admin", "role": "admin"})
+        return parsed
+
+    def bootstrap_dashboard_users(self, dash_users: str | None) -> None:
+        """
+        Seed dashboard users from env when table is empty.
+        Keeps backward compatibility with env-based auth.
+        """
+        with self.get_session() as session:
+            existing_count = session.query(DashboardUser).count()
+            if existing_count > 0:
+                return
+
+            for entry in self._parse_dash_users_env(dash_users):
+                session.add(
+                    DashboardUser(
+                        username=entry["username"],
+                        password_hash=self._hash_password(entry["password"]),
+                        role=self._normalize_role(entry["role"]),
+                    )
+                )
+
+    def verify_dashboard_user(self, username: str, password: str) -> dict[str, Any] | None:
+        with self.get_session() as session:
+            user = session.query(DashboardUser).filter_by(username=username).first()
+            if not user:
+                return None
+            if not self._verify_password(password, user.password_hash):
+                return None
+            return self._dashboard_user_to_dict(user)
+
+    def list_dashboard_users(self) -> list[dict[str, Any]]:
+        with self.get_session() as session:
+            users = session.query(DashboardUser).order_by(DashboardUser.username.asc()).all()
+            return [self._dashboard_user_to_dict(user) for user in users]
+
+    def create_dashboard_user(self, username: str, password: str, role: str) -> dict[str, Any]:
+        with self.get_session() as session:
+            existing = session.query(DashboardUser).filter_by(username=username).first()
+            if existing:
+                raise ValueError("User already exists")
+            user = DashboardUser(
+                username=username,
+                password_hash=self._hash_password(password),
+                role=self._normalize_role(role),
+            )
+            session.add(user)
+            session.flush()
+            return self._dashboard_user_to_dict(user)
+
+    def delete_dashboard_user(self, username: str) -> bool:
+        with self.get_session() as session:
+            user = session.query(DashboardUser).filter_by(username=username).first()
+            if not user:
+                return False
+            if user.role == "admin":
+                admin_count = session.query(DashboardUser).filter_by(role="admin").count()
+                if admin_count <= 1:
+                    raise ValueError("Cannot delete the last admin user")
+            session.delete(user)
+            return True
+
+    def _dashboard_user_to_dict(self, user: DashboardUser) -> dict[str, Any]:
+        return {
+            "id": user.id,
+            "username": user.username,
+            "role": self._normalize_role(user.role),
+            "created_at": _iso_z(user.created_at),
+            "updated_at": _iso_z(user.updated_at),
+        }
 
     # Metrics (aggregated from traces and jobs)
 
