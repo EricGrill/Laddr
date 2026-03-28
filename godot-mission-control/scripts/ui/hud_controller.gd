@@ -180,6 +180,8 @@ func _update_metrics() -> void:
 	metrics_label.text = text
 
 	# Throughput line
+	if not throughput_tracker or not metrics_label_2:
+		return
 	var in_5m := throughput_tracker.get_5m_inbound()
 	var in_1h := throughput_tracker.get_1h_inbound()
 	var in_24h := throughput_tracker.get_24h_inbound()
@@ -213,11 +215,12 @@ func _process(delta: float) -> void:
 		connection_dot.scale = Vector2(pulse, pulse)
 
 	# Capacity status pulse on throughput line
-	if _capacity_pulse_active:
-		var alpha := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 500.0)
-		metrics_label_2.modulate.a = alpha
-	else:
-		metrics_label_2.modulate.a = 1.0
+	if metrics_label_2:
+		if _capacity_pulse_active:
+			var alpha := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 500.0)
+			metrics_label_2.modulate.a = alpha
+		else:
+			metrics_label_2.modulate.a = 1.0
 
 
 func _animate_status_dot(state: String) -> void:
