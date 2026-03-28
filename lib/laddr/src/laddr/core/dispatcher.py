@@ -20,6 +20,39 @@ logger = logging.getLogger(__name__)
 DISPATCHER_GROUP = "dispatcher"
 DISPATCHER_CONSUMER = "dispatcher-0"
 
+# Overflow thresholds
+OVERFLOW_QUEUE_THRESHOLD = 100  # Queue depth that triggers Venice overflow
+OVERFLOW_DAILY_BUDGET_USD = 5.0  # Max daily Venice spend
+OVERFLOW_BUDGET_KEY = "laddr:overflow:daily_spend"
+OVERFLOW_BUDGET_DATE_KEY = "laddr:overflow:budget_date"
+
+# Triage: job complexity estimation keywords
+SIMPLE_KEYWORDS = ["summarize", "translate", "classify", "list", "count", "extract", "format"]
+COMPLEX_KEYWORDS = ["analyze", "research", "implement", "debug", "design", "architect", "compare"]
+
+
+def estimate_job_complexity(job: dict) -> str:
+    """Estimate job complexity: 'simple', 'moderate', or 'complex'.
+
+    Used by the triage system to prioritize and route jobs.
+    Simple jobs go to fast local models, complex jobs get priority routing.
+    """
+    prompt = str(job.get("user_prompt", "") or job.get("prompt", "")).lower()
+    system = str(job.get("system_prompt", "")).lower()
+    text = prompt + " " + system
+
+    # Check prompt length as a signal
+    is_long = len(text) > 2000
+
+    simple_hits = sum(1 for kw in SIMPLE_KEYWORDS if kw in text)
+    complex_hits = sum(1 for kw in COMPLEX_KEYWORDS if kw in text)
+
+    if complex_hits >= 2 or is_long:
+        return "complex"
+    elif simple_hits >= 2 and not is_long:
+        return "simple"
+    return "moderate"
+
 
 class Dispatcher:
     """Central job router: reads pending streams, matches to workers, routes jobs."""
@@ -147,9 +180,88 @@ class Dispatcher:
                 logger.warning("XAUTOCLAIM failed on %s: %s", stream, exc)
         return reclaimed
 
+    async def _get_queue_depth(self) -> int:
+        """Get total pending job count across all priority streams."""
+        if not self.redis:
+            return 0
+        total = 0
+        for priority in PRIORITY_LEVELS:
+            stream = priority_stream_key(priority)
+            try:
+                length = await self.redis.xlen(stream)
+                total += length
+            except Exception:
+                pass
+        return total
+
+    async def _check_overflow_budget(self) -> bool:
+        """Check if we're within the daily Venice overflow budget."""
+        if not self.redis:
+            return False
+        try:
+            today = time.strftime("%Y-%m-%d")
+            budget_date = await self.redis.get(OVERFLOW_BUDGET_DATE_KEY)
+            if budget_date != today:
+                # New day — reset budget
+                await self.redis.set(OVERFLOW_BUDGET_DATE_KEY, today)
+                await self.redis.set(OVERFLOW_BUDGET_KEY, "0.0")
+                return True
+            spent = float(await self.redis.get(OVERFLOW_BUDGET_KEY) or "0.0")
+            return spent < OVERFLOW_DAILY_BUDGET_USD
+        except Exception:
+            return False
+
+    async def _record_overflow_cost(self, estimated_cost: float) -> None:
+        """Record estimated cost of a Venice overflow job."""
+        if not self.redis:
+            return
+        try:
+            await self.redis.incrbyfloat(OVERFLOW_BUDGET_KEY, estimated_cost)
+        except Exception:
+            pass
+
+    async def _triage_and_route(self, job: dict) -> dict | None:
+        """Triage a job and find the best worker, considering overflow to Venice.
+
+        1. Estimate complexity
+        2. If queue is deep and budget allows, prefer Venice-capable workers for overflow
+        3. Simple jobs → fastest local worker
+        4. Complex jobs → most capable worker (Venice if overflowing)
+        """
+        complexity = estimate_job_complexity(job)
+        queue_depth = await self._get_queue_depth()
+        overflow_active = queue_depth > OVERFLOW_QUEUE_THRESHOLD
+
+        # Log triage decision
+        if overflow_active:
+            budget_ok = await self._check_overflow_budget()
+            if budget_ok:
+                logger.info(
+                    "TRIAGE: queue=%d complexity=%s → overflow to Venice",
+                    queue_depth, complexity,
+                )
+                # Tag the job so workers know to use Venice
+                job.setdefault("routing", {})["prefer_cloud"] = True
+                job["routing"]["complexity"] = complexity
+                if complexity == "simple":
+                    # Estimate ~$0.001 per simple job
+                    await self._record_overflow_cost(0.001)
+                else:
+                    await self._record_overflow_cost(0.005)
+            else:
+                logger.info(
+                    "TRIAGE: queue=%d complexity=%s → budget exhausted, local only",
+                    queue_depth, complexity,
+                )
+        else:
+            logger.info("TRIAGE: queue=%d complexity=%s → normal routing", queue_depth, complexity)
+
+        # Find worker (select_best_worker handles capacity checks)
+        return await self.async_find_worker_for_job(job)
+
     async def _dispatch_job(self, job: dict, stream: str, msg_id: str) -> bool:
         """Try to route a single job. Returns True if dispatched."""
-        worker = await self.async_find_worker_for_job(job)
+        worker = await self._triage_and_route(job)
         if worker is None:
             return False
 

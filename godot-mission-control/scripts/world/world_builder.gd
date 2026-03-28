@@ -12,6 +12,8 @@ var agent_nodes: Dictionary = {}  # worker_id -> BlobAgent node
 var _snapshot_processed: bool = false
 var _floor_node: Node2D = null
 var _job_delivery: Node2D = null
+var _sidious: Node2D = null
+var _triage_droid: Node2D = null
 
 # Grid layout — wider spacing for bigger sprites
 const TILE_SIZE = 64
@@ -110,6 +112,12 @@ func _on_snapshot_loaded() -> void:
 		var intake_pos = nav.get_position("intake")
 		if intake_pos != Vector2.ZERO:
 			_job_delivery.set_intake_position(intake_pos)
+
+	# Spawn Sidious at Command Deck
+	_spawn_sidious()
+
+	# Spawn Triage Droid near Dispatcher
+	_spawn_triage_droid()
 
 	for worker_id in WorldState.workers:
 		_spawn_agent(worker_id)
@@ -288,6 +296,41 @@ func _setup_job_delivery() -> void:
 		_job_delivery.name = "JobDelivery"
 		_job_delivery.set_script(delivery_script)
 		add_child(_job_delivery)
+
+
+func _spawn_sidious() -> void:
+	var script = load("res://scripts/agents/sidious_controller.gd")
+	if not script:
+		return
+	_sidious = Node2D.new()
+	_sidious.name = "Sidious"
+	_sidious.set_script(script)
+	# Position at Command Deck with slight offset
+	var cmd_pos = nav.get_position("supervisor")
+	if cmd_pos != Vector2.ZERO:
+		_sidious.position = cmd_pos + Vector2(0, 20)
+	else:
+		_sidious.position = iso.grid_to_screen(Vector2(10, 3)) + Vector2(0, 20)
+	_sidious.z_index = 10
+	add_child(_sidious)
+
+
+func _spawn_triage_droid() -> void:
+	var script = load("res://scripts/agents/triage_controller.gd")
+	if not script:
+		return
+	_triage_droid = Node2D.new()
+	_triage_droid.name = "TriageDroid"
+	_triage_droid.set_script(script)
+	# Position between Intake and Dispatcher
+	var intake_pos = nav.get_position("intake")
+	var dispatch_pos = nav.get_position("dispatcher")
+	if intake_pos != Vector2.ZERO and dispatch_pos != Vector2.ZERO:
+		_triage_droid.position = (intake_pos + dispatch_pos) / 2 + Vector2(0, -15)
+	else:
+		_triage_droid.position = iso.grid_to_screen(Vector2(4, 5))
+	_triage_droid.z_index = 10
+	add_child(_triage_droid)
 
 
 func _on_station_changed(_station_id: String) -> void:

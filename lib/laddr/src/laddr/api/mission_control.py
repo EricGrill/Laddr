@@ -228,6 +228,25 @@ async def _build_snapshot(deps: dict) -> dict:
     error_count = len([j for j in jobs if j["state"] == "failed"])
     retry_count = len([j for j in jobs if j["state"] == "retrying"])
 
+    # Queue depth from Redis (real count, not just DB)
+    real_queue_depth = 0
+    if redis_client:
+        try:
+            for priority in ("normal", "high", "low", "critical"):
+                length = await redis_client.xlen(f"laddr:jobs:pending:{priority}")
+                real_queue_depth += length
+        except Exception:
+            pass
+
+    # Overflow/triage state
+    overflow_active = real_queue_depth > 100
+    daily_spend = 0.0
+    if redis_client:
+        try:
+            daily_spend = float(await redis_client.get("laddr:overflow:daily_spend") or "0.0")
+        except Exception:
+            pass
+
     return {
         "type": "snapshot",
         "data": {
@@ -241,6 +260,10 @@ async def _build_snapshot(deps: dict) -> dict:
                 "activeAgents": active_agents,
                 "errorCount": error_count,
                 "retryCount": retry_count,
+                "realQueueDepth": real_queue_depth,
+                "overflowActive": overflow_active,
+                "dailyVeniceSpend": round(daily_spend, 3),
+                "dailyVeniceBudget": 5.0,
             },
         },
     }
