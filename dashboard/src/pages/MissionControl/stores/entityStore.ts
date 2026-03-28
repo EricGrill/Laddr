@@ -6,6 +6,7 @@ import type {
   MCMetrics,
   MCServerEvent,
   MCStation,
+  MCWorkerActivity,
   MCWorker,
 } from "../types";
 
@@ -14,6 +15,7 @@ interface EntityState {
   jobs: Record<string, MCJob>;
   stations: Record<string, MCStation>;
   workers: Record<string, MCWorker>;
+  workerActivity: Record<string, MCWorkerActivity>;
   queues: Record<string, number>;
   metrics: MCMetrics;
   handleEvent: (event: MCServerEvent) => void;
@@ -39,6 +41,7 @@ export const useEntityStore = create<EntityState>((set) => ({
   jobs: {},
   stations: {},
   workers: {},
+  workerActivity: {},
   queues: {},
   metrics: EMPTY_METRICS,
 
@@ -50,6 +53,7 @@ export const useEntityStore = create<EntityState>((set) => ({
           jobs: toRecord(event.data.jobs),
           stations: toRecord(event.data.stations),
           workers: toRecord(event.data.workers),
+          workerActivity: {},
           queues: event.data.queues,
           metrics: event.data.metrics,
         });
@@ -71,6 +75,23 @@ export const useEntityStore = create<EntityState>((set) => ({
         set((s) => ({
           jobs: { ...s.jobs, [event.job.id]: event.job },
         }));
+        break;
+
+      case "job_activity":
+        set((s) => {
+          const existing = s.jobs[event.jobId];
+          if (!existing) return s;
+          return {
+            jobs: {
+              ...s.jobs,
+              [event.jobId]: {
+                ...existing,
+                metadata: { ...existing.metadata, ...event.patch },
+                history: [...existing.history, event.event].slice(-20),
+              },
+            },
+          };
+        });
         break;
 
       case "job_completed": {
@@ -150,10 +171,20 @@ export const useEntityStore = create<EntityState>((set) => ({
         }));
         break;
 
+      case "worker_activity":
+        set((s) => ({
+          workerActivity: {
+            ...s.workerActivity,
+            [event.activity.workerId]: event.activity,
+          },
+        }));
+        break;
+
       case "worker_deregistered": {
         set((s) => {
-          const { [event.workerId]: _, ...rest } = s.workers;
-          return { workers: rest };
+          const { [event.workerId]: _worker, ...restWorkers } = s.workers;
+          const { [event.workerId]: _activity, ...restActivity } = s.workerActivity;
+          return { workers: restWorkers, workerActivity: restActivity };
         });
         break;
       }

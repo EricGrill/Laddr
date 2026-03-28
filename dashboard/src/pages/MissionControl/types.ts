@@ -32,6 +32,15 @@ export interface MCAgent {
 // --- Job ---
 
 export type JobPriority = "low" | "normal" | "high" | "critical";
+export type WorkType =
+  | "llm"
+  | "tool"
+  | "code"
+  | "review"
+  | "orchestration"
+  | "wait"
+  | "retry"
+  | "mixed";
 
 export type JobState =
   | "created"
@@ -46,6 +55,31 @@ export type JobState =
   | "cancelled"
   | "paused";
 
+export interface MCJobMetadata {
+  summary?: string;
+  goal?: string;
+  workType?: WorkType;
+  currentStep?: string;
+  latestActivity?: string;
+  latestActivityAt?: string;
+  retryCount?: number;
+  toolNames?: string[];
+  filePaths?: string[];
+  tokenCount?: number;
+  costUsd?: number;
+  estimatedProgress?: number;
+  blockedReason?: string;
+}
+
+export interface MCJobHistoryEvent {
+  at: string;
+  event: string;
+  detail?: string;
+  workType?: WorkType;
+  stationId?: string;
+  workerId?: string;
+}
+
 export interface MCJob {
   id: string;
   type: string;
@@ -57,8 +91,8 @@ export interface MCJob {
   progress?: number;
   createdAt: string;
   updatedAt: string;
-  metadata?: Record<string, unknown>;
-  history: Array<{ at: string; event: string; detail?: string }>;
+  metadata?: MCJobMetadata;
+  history: MCJobHistoryEvent[];
 }
 
 // --- Station ---
@@ -105,6 +139,26 @@ export interface MCWorker {
   status: WorkerStatus;
 }
 
+export interface MCWorkerActivity {
+  workerId: string;
+  stationId?: string;
+  jobId?: string;
+  message: string;
+  kind: WorkType | "blocked" | "error";
+  at: string;
+  ttlMs: number;
+}
+
+export interface WorkMixMetrics {
+  llm: number;
+  tool: number;
+  code: number;
+  review: number;
+  orchestration: number;
+  wait: number;
+  retry: number;
+}
+
 // --- Metrics ---
 
 export interface MCMetrics {
@@ -112,6 +166,13 @@ export interface MCMetrics {
   activeAgents: number;
   errorCount: number;
   retryCount: number;
+  realQueueDepth?: number;
+  overflowActive?: boolean;
+  dailyVeniceSpend?: number;
+  dailyVeniceBudget?: number;
+  workMix?: WorkMixMetrics;
+  dominantMode?: keyof WorkMixMetrics;
+  jobsBlocked?: number;
 }
 
 // --- WebSocket Events ---
@@ -130,12 +191,14 @@ export type MCServerEvent =
   | { type: "agent_updated"; agent: MCAgent }
   | { type: "job_created"; job: MCJob }
   | { type: "job_updated"; job: MCJob }
+  | { type: "job_activity"; jobId: string; event: MCJobHistoryEvent; patch?: Partial<MCJobMetadata> }
   | { type: "job_completed"; jobId: string; at: string }
   | { type: "job_failed"; jobId: string; reason?: string; at: string }
   | { type: "job_assigned"; jobId: string; agentId: string; stationId: string }
   | { type: "job_handoff"; jobId: string; fromStationId: string; toStationId: string }
   | { type: "station_updated"; station: MCStation }
   | { type: "worker_registered"; worker: MCWorker }
+  | { type: "worker_activity"; activity: MCWorkerActivity }
   | { type: "worker_deregistered"; workerId: string }
   | { type: "metrics_updated"; metrics: MCMetrics }
   | { type: "command_ack"; action: string; success: boolean; error?: string };

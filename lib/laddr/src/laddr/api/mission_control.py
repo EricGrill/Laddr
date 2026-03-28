@@ -73,6 +73,84 @@ def _build_station_from_worker(worker: dict) -> dict:
     }
 
 
+def _infer_work_type(worker: dict | None = None, job_type: str | None = None, status: str | None = None) -> str:
+    """Best-effort work type inference for Mission Control overlays."""
+    if status == "retrying":
+        return "retry"
+    if status in ("pending", "queued", "created"):
+        return "wait"
+
+    job_type_l = (job_type or "").lower()
+    if any(token in job_type_l for token in ("review", "qa", "audit")):
+        return "review"
+    if any(token in job_type_l for token in ("code", "script", "patch", "test", "build")):
+        return "code"
+    if any(token in job_type_l for token in ("search", "browser", "tool", "mcp", "fetch")):
+        return "tool"
+    if any(token in job_type_l for token in ("chat", "prompt", "llm", "model", "summar")):
+        return "llm"
+
+    if worker:
+      if worker.get("models"):
+          return "llm"
+      if worker.get("mcps"):
+          return "tool"
+      if worker.get("skills"):
+          return "code"
+    return "orchestration"
+
+
+def _status_to_step(status: str) -> str:
+    return {
+        "pending": "Queued for pickup",
+        "running": "In progress",
+        "completed": "Delivered to output",
+        "failed": "Failed in execution",
+        "cancelled": "Cancelled",
+    }.get(status, "Queued for pickup")
+
+
+def _progress_from_status(status: str) -> float:
+    return {
+        "pending": 0.1,
+        "running": 0.65,
+        "completed": 1.0,
+        "failed": 1.0,
+        "cancelled": 1.0,
+    }.get(status, 0.0)
+
+
+def _build_job_history(prompt_entry: dict, station_id: str, work_type: str) -> list[dict]:
+    created_at = prompt_entry.get("created_at", "")
+    status = prompt_entry.get("status", "pending")
+    history = [
+        {
+            "at": created_at,
+            "event": "created",
+            "detail": "Job entered Mission Control",
+            "workType": "orchestration",
+            "stationId": "intake",
+        }
+    ]
+    history.append(
+        {
+            "at": created_at,
+            "event": status,
+            "detail": _status_to_step(status),
+            "workType": work_type,
+            "stationId": station_id,
+        }
+    )
+    return history
+
+
+def _dominant_mode(work_mix: dict[str, int]) -> str:
+    non_zero = {k: v for k, v in work_mix.items() if v > 0}
+    if not non_zero:
+        return "orchestration"
+    return max(non_zero.items(), key=lambda item: item[1])[0]
+
+
 def _build_worker(worker: dict) -> dict:
     """Convert a worker registry entry to a Mission Control worker."""
     caps = []
@@ -210,6 +288,10 @@ async def _build_snapshot(deps: dict) -> dict:
     if database:
         try:
             recent = database.list_prompts(limit=100)
+            worker_lookup: dict[str, dict] = {}
+            for worker in raw_workers:
+                worker_lookup[worker["worker_id"]] = worker
+
             for pe in recent:
                 state_map = {
                     "pending": "queued",
@@ -218,19 +300,54 @@ async def _build_snapshot(deps: dict) -> dict:
                     "failed": "failed",
                     "cancelled": "cancelled",
                 }
+                status = pe.get("status", "")
+                worker_hint = raw_workers[0] if raw_workers else None
+                work_type = _infer_work_type(worker_hint, pe.get("prompt_name", ""), status)
+                station_map = {
+                    "llm": "llm",
+                    "tool": "tool",
+                    "code": "code",
+                    "review": "supervisor",
+                    "orchestration": "dispatcher",
+                    "wait": "intake",
+                    "retry": "error-chamber",
+                }
+                station_suffix = station_map.get(work_type, "dispatcher")
+                station_id = station_suffix
+                for station in stations:
+                    if station["type"] == station_suffix:
+                        station_id = station["id"]
+                        break
+                summary = pe.get("prompt_name", "unknown")
+                current_step = _status_to_step(status)
+                history = _build_job_history(pe, station_id, work_type)
+                progress = _progress_from_status(status)
                 jobs.append({
                     "id": pe.get("prompt_id", ""),
                     "type": pe.get("prompt_name", "unknown"),
                     "priority": "normal",
-                    "state": state_map.get(pe.get("status", ""), "queued"),
-                    "assignedAgentId": None,
-                    "currentStationId": None,
-                    "path": [],
-                    "progress": None,
+                    "state": state_map.get(status, "queued"),
+                    "assignedAgentId": worker_hint.get("worker_id") if status == "running" and worker_hint else None,
+                    "currentStationId": station_id,
+                    "path": ["intake", "dispatcher", station_id],
+                    "progress": progress,
                     "createdAt": pe.get("created_at", ""),
                     "updatedAt": pe.get("created_at", ""),
-                    "metadata": None,
-                    "history": [],
+                    "metadata": {
+                        "summary": summary,
+                        "goal": summary,
+                        "workType": work_type,
+                        "currentStep": current_step,
+                        "latestActivity": current_step,
+                        "latestActivityAt": pe.get("created_at", ""),
+                        "retryCount": 1 if status == "failed" else 0,
+                        "toolNames": ["llm" if work_type == "llm" else work_type] if work_type not in ("wait", "orchestration") else [],
+                        "filePaths": [],
+                        "tokenCount": None,
+                        "costUsd": None,
+                        "estimatedProgress": progress,
+                    },
+                    "history": history,
                 })
         except Exception:
             logger.debug("Could not read jobs from database")
@@ -240,6 +357,25 @@ async def _build_snapshot(deps: dict) -> dict:
     active_agents = len([a for a in agents if a["state"] != "idle"])
     error_count = len([j for j in jobs if j["state"] == "failed"])
     retry_count = len([j for j in jobs if j["state"] == "retrying"])
+    jobs_blocked = len([j for j in jobs if j["state"] in ("failed", "paused")])
+    work_mix = {
+        "llm": 0,
+        "tool": 0,
+        "code": 0,
+        "review": 0,
+        "orchestration": 0,
+        "wait": 0,
+        "retry": 0,
+    }
+    for job in jobs:
+        if job["state"] == "queued":
+            work_mix["wait"] += 1
+            continue
+        if job["state"] == "failed":
+            work_mix["retry"] += 1
+            continue
+        work_type = (job.get("metadata") or {}).get("workType", "orchestration")
+        work_mix[work_type] = work_mix.get(work_type, 0) + 1
 
     # Queue depth from Redis (real count, not just DB)
     real_queue_depth = 0
@@ -273,6 +409,9 @@ async def _build_snapshot(deps: dict) -> dict:
                 "activeAgents": active_agents,
                 "errorCount": error_count,
                 "retryCount": retry_count,
+                "workMix": work_mix,
+                "dominantMode": _dominant_mode(work_mix),
+                "jobsBlocked": jobs_blocked,
                 "realQueueDepth": real_queue_depth,
                 "overflowActive": overflow_active,
                 "dailyVeniceSpend": round(daily_spend, 3),

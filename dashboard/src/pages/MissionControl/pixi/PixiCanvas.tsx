@@ -3,14 +3,23 @@ import { useRef, useEffect } from 'react';
 import { Application, Container, Text, TextStyle } from 'pixi.js';
 import { createEnvironment } from './Environment';
 import { createStation, updateStation, tickStation, STATION_POSITIONS, type StationConfig } from './StationGraphic';
-import { createWorker, updateWorker, getRoleColor, setWorkerPosition } from './WorkerGraphic';
+import { createWorker, updateWorker, updateWorkerBubble, getRoleColor, setWorkerPosition } from './WorkerGraphic';
 import { createPacket, updatePacket } from './PacketGraphic';
 import { createPipelines, updatePipelineFlow } from './PipelineGraphic';
 import { useEntityStore } from '../stores/entityStore';
 import { useUIStore } from '../stores/uiStore';
-import type { StationType, StationState, MCWorker, MCJob } from '../types';
+import type { StationType, StationState, MCWorker, MCJob, WorkMixMetrics } from '../types';
 
 const BG_COLOR = 0x1a2230;
+const DEFAULT_WORK_MIX: WorkMixMetrics = {
+  llm: 0,
+  tool: 0,
+  code: 0,
+  review: 0,
+  orchestration: 0,
+  wait: 0,
+  retry: 0,
+};
 
 /** Resolve a station layout position to screen coordinates */
 function resolvePos(id: string, screenW: number, screenH: number): { x: number; y: number } {
@@ -287,6 +296,30 @@ export function PixiCanvas() {
       queueDepthText.y = 50;
       overlayContainer.addChild(queueDepthText);
 
+      const workMixText = new Text({
+        text: 'WORK MIX: orchestration',
+        style: new TextStyle({
+          fontSize: 15,
+          fill: '#cccccc',
+          fontFamily: 'Arial, Helvetica, sans-serif',
+        }),
+      });
+      workMixText.x = 20;
+      workMixText.y = 68;
+      overlayContainer.addChild(workMixText);
+
+      const blockedText = new Text({
+        text: 'BLOCKED: 0',
+        style: new TextStyle({
+          fontSize: 15,
+          fill: '#cccccc',
+          fontFamily: 'Arial, Helvetica, sans-serif',
+        }),
+      });
+      blockedText.x = 20;
+      blockedText.y = 86;
+      overlayContainer.addChild(blockedText);
+
       // Initial sync
       syncStations();
       syncWorkers();
@@ -321,12 +354,24 @@ export function PixiCanvas() {
         }
         for (const [cap, group] of Object.entries(stationWorkerGroups)) {
           const layout = resolvePos(cap, app.screen.width, app.screen.height);
+          const stationKey = Object.keys(STATION_POSITIONS).includes(cap) ? cap : `station-${cap}`;
+          const stationJobs = Object.values(state.jobs).filter((j) => {
+            if (j.state === 'completed' || j.state === 'cancelled' || j.state === 'failed') return false;
+            const workType = j.metadata?.workType;
+            return j.currentStationId === stationKey || workType === cap;
+          });
+          const primaryJob = stationJobs[0];
+          const bubbleMessage = primaryJob?.metadata?.latestActivity
+            ?? primaryJob?.metadata?.currentStep
+            ?? (group.some((w) => w.activeJobs > 0) ? `Working ${cap}` : null);
+          const bubbleKind = primaryJob?.metadata?.workType ?? cap;
           for (let i = 0; i < group.length; i++) {
             const w = group[i];
             const wc = workerContainers.get(w.id);
             if (!wc) continue;
             const pos = workerPosition(layout.x, layout.y, i, group.length);
             updateWorker(wc, pos.x, pos.y, w.status, w.activeJobs, elapsed, dt);
+            updateWorkerBubble(wc, w.activeJobs > 0 ? bubbleMessage : null, bubbleKind);
           }
         }
 
@@ -370,6 +415,15 @@ export function PixiCanvas() {
         activeJobsText.text = `ACTIVE JOBS: ${totalActiveJobs}`;
         workersText.text = `WORKERS: ${onlineWorkers} online`;
         queueDepthText.text = `QUEUE DEPTH: ${totalQueueDepth}`;
+        const workMix = state.metrics.workMix ?? DEFAULT_WORK_MIX;
+        const workMixSummary = Object.entries(workMix)
+          .filter(([, value]) => value > 0)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([key, value]) => `${key}:${value}`)
+          .join('  ');
+        workMixText.text = `WORK MIX: ${(state.metrics.dominantMode ?? 'orchestration').toUpperCase()}${workMixSummary ? `  ${workMixSummary}` : ''}`;
+        blockedText.text = `BLOCKED: ${state.metrics.jobsBlocked ?? 0}`;
 
         // Tick pipeline flow dots
         updatePipelineFlow(pipelineLayer, dt);

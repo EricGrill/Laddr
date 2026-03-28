@@ -70,6 +70,8 @@ interface WorkerRefs {
   statusText: Text;
   jobBadgeGfx: Graphics;
   jobBadgeText: Text;
+  bubbleGfx: Graphics;
+  bubbleText: Text;
   roleColor: number;
   posX: number;
   posY: number;
@@ -201,6 +203,24 @@ export function createWorker(id: string, roleColor: number, capabilities?: strin
   jobBadgeText.visible = false;
   container.addChild(jobBadgeText);
 
+  const bubbleGfx = new Graphics();
+  bubbleGfx.visible = false;
+  container.addChild(bubbleGfx);
+
+  const bubbleText = new Text({
+    text: '',
+    style: new TextStyle({
+      fontSize: 10,
+      fill: '#0d1220',
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontWeight: 'bold',
+    }),
+  });
+  bubbleText.anchor.set(0.5, 0.5);
+  bubbleText.y = -34;
+  bubbleText.visible = false;
+  container.addChild(bubbleText);
+
   const refs: WorkerRefs = {
     bodyGfx,
     activityGfx,
@@ -210,6 +230,8 @@ export function createWorker(id: string, roleColor: number, capabilities?: strin
     statusText,
     jobBadgeGfx,
     jobBadgeText,
+    bubbleGfx,
+    bubbleText,
     roleColor,
     posX: 0,
     posY: 0,
@@ -562,6 +584,55 @@ export function updateWorker(
       pg.stroke({ color: refs.roleColor, width: 1, alpha: 0.2 });
     }
   }
+}
+
+export function updateWorkerBubble(
+  container: Container,
+  message: string | null,
+  kind: string = 'orchestration',
+): void {
+  const refs = WORKER_REFS.get(container);
+  if (!refs) return;
+
+  if (!message) {
+    refs.bubbleGfx.visible = false;
+    refs.bubbleText.visible = false;
+    return;
+  }
+
+  const fillColors: Record<string, number> = {
+    llm: 0x8fe7ff,
+    tool: 0xf2d47c,
+    code: 0x91f0c2,
+    review: 0xc6b8ff,
+    orchestration: 0xb8c6d9,
+    wait: 0xaab4c0,
+    retry: 0xff9e8f,
+    blocked: 0xffd166,
+    error: 0xff7b7b,
+  };
+
+  const text = message.length > 32 ? `${message.slice(0, 29)}...` : message;
+  refs.bubbleText.text = text;
+  refs.bubbleText.visible = true;
+  refs.bubbleGfx.visible = true;
+
+  const width = Math.max(70, refs.bubbleText.width + 14);
+  const height = 18;
+  const x = -width / 2;
+  const y = -43;
+  const fillColor = fillColors[kind] ?? fillColors.orchestration;
+
+  refs.bubbleText.x = 0;
+  refs.bubbleText.y = y + height / 2;
+
+  refs.bubbleGfx.clear();
+  refs.bubbleGfx.roundRect(x, y, width, height, 8);
+  refs.bubbleGfx.fill({ color: fillColor, alpha: 0.95 });
+  refs.bubbleGfx.moveTo(-4, y + height);
+  refs.bubbleGfx.lineTo(0, y + height + 5);
+  refs.bubbleGfx.lineTo(4, y + height);
+  refs.bubbleGfx.fill({ color: fillColor, alpha: 0.95 });
 }
 
 /** Set initial position without lerping */
