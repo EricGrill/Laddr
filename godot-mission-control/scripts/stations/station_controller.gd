@@ -210,8 +210,9 @@ func _update_from_data(data: Dictionary) -> void:
 					lines.append(clean.left(24))
 					break
 
+			var completed_hr = worker_data.get("completedLastHour", 0)
 			if active > 0:
-				lines.append("%d active" % active)
+				lines.append("%d active | %d/hr" % [active, completed_hr])
 				# Find current job title
 				for jid in WorldState.jobs:
 					var job = WorldState.jobs[jid]
@@ -224,7 +225,7 @@ func _update_from_data(data: Dictionary) -> void:
 								break
 						break
 			else:
-				lines.append("idle")
+				lines.append("idle | %d/hr" % completed_hr)
 
 			info_label.text = "\n".join(lines)
 		else:

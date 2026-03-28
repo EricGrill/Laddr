@@ -318,6 +318,19 @@ async def _build_snapshot(deps: dict) -> dict:
                     w["activeJobs"] = stream_len
             except Exception:
                 w["streamPending"] = 0
+
+        # Per-worker completion stats (hourly buckets in Redis)
+        import time as _wtime
+        hour_bucket = int(_wtime.time() // 3600)
+        for w in workers:
+            wid = w["id"]
+            try:
+                current = await redis_client.get(f"laddr:worker_stats:{wid}:completed:{hour_bucket}")
+                prev = await redis_client.get(f"laddr:worker_stats:{wid}:completed:{hour_bucket - 1}")
+                w["completedLastHour"] = int(current or 0) + int(prev or 0)
+            except Exception:
+                w["completedLastHour"] = 0
+
     dynamic_stations = [_build_station_from_worker(w) for w in raw_workers]
     stations = _fixed_stations() + dynamic_stations
 

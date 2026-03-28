@@ -456,6 +456,16 @@ class WorkerProcess:
                 await self._fire_callback(callback_url, callback_headers, result_payload)
 
             logger.info("Job %s (%s) completed", job_id, task_type)
+
+            # Track per-worker completion count (hourly bucket, auto-expires)
+            try:
+                import time as _time
+                hour_bucket = int(_time.time() // 3600)
+                counter_key = f"laddr:worker_stats:{self.worker_id}:completed:{hour_bucket}"
+                await self._redis.incr(counter_key)
+                await self._redis.expire(counter_key, 7200)  # expire after 2 hours
+            except Exception:
+                pass
         finally:
             self._active_jobs -= 1
             # Decrement both keys for compatibility with dispatcher backpressure
