@@ -131,8 +131,10 @@ SERPER_API_KEY=
 # ===================================
 # Dashboard Authentication
 # ===================================
-# Optional basic auth for dashboard (format: username:password)
-# LADDR_DASH_USERS=admin:admin
+# Optional basic auth for dashboard (format: username:password:role)
+# Role values: admin | read_only
+# Backward compatible with username:password entries (defaults to read_only)
+# LADDR_DASH_USERS=admin:admin:admin,viewer:viewer:read_only
 
 # ===================================
 # API Key Authentication

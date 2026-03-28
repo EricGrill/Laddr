@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { Play, Loader2, Server, Cpu, Clock, Zap, ChevronDown } from "lucide-react";
+import { Play, Loader2, Server, Cpu, Clock, Zap } from "lucide-react";
 import api from "../lib/api";
+import { canWrite } from "../lib/auth";
 
 interface Worker {
   worker_id: string;
@@ -46,6 +47,7 @@ export default function CapabilityPlayground() {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<JobResult[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const readOnlyUser = !canWrite();
 
   // Fetch workers and queue on load
   useEffect(() => {
@@ -92,6 +94,10 @@ export default function CapabilityPlayground() {
 
   const handleSubmit = async () => {
     if (!userPrompt.trim()) return;
+    if (readOnlyUser) {
+      setError("Read-only users cannot submit capability jobs.");
+      return;
+    }
     setSubmitting(true);
     setResult(null);
     setError(null);
@@ -239,7 +245,7 @@ export default function CapabilityPlayground() {
             {/* Submit */}
             <button
               onClick={handleSubmit}
-              disabled={submitting || polling || !userPrompt.trim()}
+              disabled={submitting || polling || !userPrompt.trim() || readOnlyUser}
               className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium py-3 px-4 rounded-lg transition-colors"
             >
               {submitting || polling ? (
@@ -254,6 +260,11 @@ export default function CapabilityPlayground() {
                 </>
               )}
             </button>
+            {readOnlyUser && (
+              <p className="text-xs text-amber-400">
+                You are signed in with read-only access. Running jobs is disabled.
+              </p>
+            )}
 
             {/* Error */}
             {error && (

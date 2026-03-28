@@ -63,7 +63,7 @@ services:
       - "5173:5173"
     environment:
       - VITE_API_URL=http://api:${API_PORT:-8000}
-      - VITE_DASH_USERS=${LADDR_DASH_USERS:-admin:admin}
+      - VITE_DASH_USERS=${LADDR_DASH_USERS:-admin:admin:admin}
     depends_on:
       - api
 

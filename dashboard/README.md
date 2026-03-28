@@ -115,6 +115,7 @@ The dashboard uses environment variables for configuration:
 
 - `VITE_API_URL`: API server URL (default: `http://api:8000`)
 - `VITE_WS_URL`: WebSocket URL (default: `ws://api:8000`)
+- `VITE_DASH_USERS`: Dashboard users in `username:password:role` format (role is `admin` or `read_only`; old `username:password` format still works and defaults to `read_only`)
 
 ## 📊 Features
 
@@ -147,6 +148,10 @@ The dashboard provides:
    - WebSocket for live logs
    - System event streaming
    - Agent status updates
+6. **Admin Access Controls**
+   - Role-based users (`admin`, `read_only`)
+   - Admin-only Users page for creating/deleting dashboard users
+   - Admin-only session visibility page (`/user-sessions`)
 
 ## 🔗 API Integration
 

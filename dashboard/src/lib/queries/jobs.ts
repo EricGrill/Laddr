@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 import type { Job, PipelineRunRequest } from '../types';
+import { canWrite } from '../auth';
 
 export const useJobs = () => {
   return useQuery({
@@ -34,6 +35,9 @@ export const useRunPipeline = () => {
   
   return useMutation({
     mutationFn: async (request: PipelineRunRequest) => {
+      if (!canWrite()) {
+        throw new Error("Read-only users cannot run pipelines.");
+      }
       const { data } = await api.post<Job>('/api/jobs', {
         pipeline_name: request.pipeline_name,
         inputs: request.inputs || {}
@@ -51,6 +55,9 @@ export const useReplayJob = () => {
   
   return useMutation({
     mutationFn: async ({ jobId, reexecute = false }: { jobId: string; reexecute?: boolean }) => {
+      if (!canWrite()) {
+        throw new Error("Read-only users cannot replay jobs.");
+      }
       const { data } = await api.post(`/api/jobs/${jobId}/replay`, { reexecute });
       return data;
     },

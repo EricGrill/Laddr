@@ -2,6 +2,7 @@ import { useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogIn } from 'lucide-react';
 import { login } from '../lib/auth';
+import { startSessionTracking } from '../lib/api';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -9,11 +10,16 @@ export default function Login() {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (login(username, password)) {
+    if (await login(username, password)) {
+      try {
+        await startSessionTracking();
+      } catch {
+        // Best effort: allow login even if tracking endpoint is unavailable.
+      }
       navigate('/');
     } else {
       setError('Invalid username or password');
@@ -99,7 +105,7 @@ export default function Login() {
 
           <div className="mt-6 pt-6 border-t border-gray-800">
             <p className="text-center text-sm text-gray-400">
-              Default credentials: <span className="text-[#1FB8CD] font-medium">admin / admin</span>
+              Default credentials: <span className="text-[#1FB8CD] font-medium">admin / admin</span> (admin)
             </p>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { canWrite } from '../auth';
 
 export interface Batch {
   batch_id: string;
@@ -55,6 +56,9 @@ export const useAddTasksToBatch = () => {
       tasks: Array<Record<string, any>>;
       wait?: boolean;
     }) => {
+      if (!canWrite()) {
+        throw new Error("Read-only users cannot add tasks to a batch.");
+      }
       const { data } = await api.post(`/api/batches/${batchId}/add-tasks`, {
         agent_name: agentName,
         tasks,
