@@ -7,7 +7,6 @@ import asyncio
 import copy as _copy
 import json
 import logging
-import time
 import time as _time
 from typing import Any
 
@@ -475,6 +474,7 @@ async def _build_snapshot(deps: dict) -> dict:
                 "overflowActive": overflow_active,
                 "dailyVeniceSpend": round(daily_spend, 3),
                 "dailyVeniceBudget": 5.0,
+                "throughput": _compute_throughput(database),
             },
         },
     }
