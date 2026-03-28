@@ -270,19 +270,7 @@ class Dispatcher:
         worker_id = worker["worker_id"]
         target_stream = worker_stream_key(worker_id)
 
-        # Check real capacity: stream pending + heartbeat active
-        max_concurrent = worker.get("capabilities", {}).get("max_concurrent", 1)
-        try:
-            stream_pending = await self.redis.xlen(target_stream)
-        except Exception:
-            stream_pending = 0
-        actual_active = worker.get("active_jobs", 0)
-        total_load = stream_pending + actual_active
-
-        if total_load >= max_concurrent:
-            return False  # Worker is full
-
-        # Route to per-worker stream
+        # Route to per-worker stream (capacity already checked in select_best_worker)
         try:
             await self.redis.xadd(target_stream, {"job": json.dumps(job)})
         except Exception as exc:
@@ -310,17 +298,6 @@ class Dispatcher:
 
             worker_id = worker["worker_id"]
             target_stream = worker_stream_key(worker_id)
-
-            # Check real capacity before dispatch
-            max_concurrent = worker.get("capabilities", {}).get("max_concurrent", 1)
-            try:
-                stream_pending = await self.redis.xlen(target_stream)
-            except Exception:
-                stream_pending = 0
-            actual_active = worker.get("active_jobs", 0)
-            if stream_pending + actual_active >= max_concurrent:
-                still_waiting.append(entry)
-                continue
 
             try:
                 await self.redis.xadd(target_stream, {"job": json.dumps(job)})
@@ -378,8 +355,8 @@ class Dispatcher:
                     groupname=DISPATCHER_GROUP,
                     consumername=DISPATCHER_CONSUMER,
                     streams=streams,
-                    count=10,
-                    block=1000,  # 1s block
+                    count=50,
+                    block=200,  # 200ms block for faster dispatch cycling
                 )
             except Exception as exc:
                 logger.error("XREADGROUP error: %s", exc)
