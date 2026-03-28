@@ -47,6 +47,9 @@ func _ready() -> void:
 		_background_base_color = background.color
 		background.color = _background_base_color
 
+	# Start in kiosk mode by default
+	call_deferred("_toggle_kiosk")
+
 
 func _toggle_kiosk() -> void:
 	_kiosk_mode = not _kiosk_mode
@@ -60,13 +63,11 @@ func _toggle_kiosk() -> void:
 	var job_board = ui_layer.get_node_or_null("JobBoard")
 
 	if _kiosk_mode:
-		# Hide ALL side panels and job board
+		# Hide side panels, KEEP job board visible
 		if inspector:
 			inspector.visible = false
 		if mission_panel:
 			mission_panel.visible = false
-		if job_board:
-			job_board.visible = false
 		# Make HUD transparent and minimal
 		if background:
 			_tween_background(background.color, _background_kiosk_color)

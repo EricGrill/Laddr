@@ -52,6 +52,7 @@ func _ready() -> void:
 
 	_draw_floor_grid()
 	_build_ambient_layer()
+	_spawn_decorations()
 	_setup_job_delivery()
 
 	WorldState.snapshot_loaded.connect(_on_snapshot_loaded)
@@ -391,6 +392,29 @@ func _distribute_jobs() -> void:
 			WorldState.stations[sid]["activeJobIds"] = station_jobs[sid]
 			WorldState.stations[sid]["queueDepth"] = station_jobs[sid].size()
 			WorldState.station_changed.emit(sid)
+
+
+func _spawn_decorations() -> void:
+	# Place decorative props around the map in empty spaces
+	var decor_items = [
+		{"file": "hologram_globe", "pos": Vector2(1, 6), "scale": 0.3},
+		{"file": "server_rack", "pos": Vector2(18, 3), "scale": 0.3},
+		{"file": "coffee_station", "pos": Vector2(13, 11), "scale": 0.28},
+		{"file": "antenna_dish", "pos": Vector2(5, 1), "scale": 0.3},
+		{"file": "server_rack", "pos": Vector2(16, 12), "scale": 0.25},
+		{"file": "hologram_globe", "pos": Vector2(12, 1), "scale": 0.25},
+	]
+	for item in decor_items:
+		var tex = load("res://assets/sprites/decor/%s.png" % item["file"])
+		if not tex:
+			continue
+		var sprite = Sprite2D.new()
+		sprite.texture = tex
+		sprite.scale = Vector2(item["scale"], item["scale"])
+		sprite.position = iso.grid_to_screen(item["pos"])
+		sprite.z_index = 2
+		sprite.modulate = Color(1, 1, 1, 0.85)
+		add_child(sprite)
 
 
 func _setup_job_delivery() -> void:
