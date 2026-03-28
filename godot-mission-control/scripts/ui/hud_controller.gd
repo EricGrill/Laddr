@@ -11,7 +11,7 @@ extends Control
 
 # Throughput display
 @onready var metrics_label_2: Label = $VBoxContainer/HBoxContainer2/MetricsLabel2
-@onready var throughput_tracker: ThroughputTracker = $ThroughputTracker
+@onready var throughput_tracker = $ThroughputTracker
 
 # Speed values mapped to slider steps 0..3
 const SPEED_VALUES = [0.5, 1.0, 2.0, 4.0]
@@ -48,6 +48,10 @@ func _ready() -> void:
 		kiosk_button.pressed.connect(_toggle_kiosk)
 		kiosk_button.add_theme_color_override("font_color", Color(0.5, 0.85, 0.95, 0.9))
 		kiosk_button.add_theme_color_override("font_hover_color", Color(0.7, 0.95, 1.0, 1.0))
+	if not metrics_label_2:
+		push_warning("HUD: metrics_label_2 is null — throughput line will not render")
+	if not throughput_tracker:
+		push_warning("HUD: throughput_tracker is null — throughput data unavailable")
 	if background:
 		_background_base_color = background.color
 		background.color = _background_base_color
@@ -182,22 +186,22 @@ func _update_metrics() -> void:
 	# Throughput line
 	if not throughput_tracker or not metrics_label_2:
 		return
-	var in_5m := throughput_tracker.get_5m_inbound()
-	var in_1h := throughput_tracker.get_1h_inbound()
-	var in_24h := throughput_tracker.get_24h_inbound()
-	var out_5m := throughput_tracker.get_5m_completed()
-	var out_1h := throughput_tracker.get_1h_completed()
-	var out_24h := throughput_tracker.get_24h_completed()
-	var sat := throughput_tracker.get_saturation()
-	var cap_status := throughput_tracker.get_capacity_status()
+	var in_5m = throughput_tracker.get_5m_inbound()
+	var in_1h = throughput_tracker.get_1h_inbound()
+	var in_24h = throughput_tracker.get_24h_inbound()
+	var out_5m = throughput_tracker.get_5m_completed()
+	var out_1h = throughput_tracker.get_1h_completed()
+	var out_24h = throughput_tracker.get_24h_completed()
+	var sat = throughput_tracker.get_saturation()
+	var cap_status = throughput_tracker.get_capacity_status()
 
-	var throughput_text := "In: %d/5m  %d/hr  %d/day   Out: %d/5m  %d/hr  %d/day   Sat: %d%%  ● %s" % [
+	var throughput_text = "In: %d/5m  %d/hr  %d/day   Out: %d/5m  %d/hr  %d/day   Sat: %d%%  ● %s" % [
 		in_5m, in_1h, in_24h, out_5m, out_1h, out_24h, int(sat * 100), cap_status.to_upper()
 	]
 	metrics_label_2.text = throughput_text
 
 	# Saturation color
-	var sat_pct := sat * 100.0
+	var sat_pct = sat * 100.0
 	if sat_pct > 80.0:
 		metrics_label_2.modulate = Color.GREEN
 	elif sat_pct > 50.0:
