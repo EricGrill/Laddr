@@ -313,6 +313,7 @@ class WorkerProcess:
 
                         if job_id in self._seen_ids:
                             await self._redis.xack(stream_key, group_name, msg_id)
+                            await self._redis.xdel(stream_key, msg_id)
                             continue
                         self._seen_ids.add(job_id)
 
@@ -322,6 +323,7 @@ class WorkerProcess:
                             logger.exception("Job %s failed", job_id)
                         finally:
                             await self._redis.xack(stream_key, group_name, msg_id)
+                            await self._redis.xdel(stream_key, msg_id)
         finally:
             if self._heartbeat_task:
                 self._heartbeat_task.cancel()
