@@ -220,12 +220,29 @@ async def lifespan(app: FastAPI):
 
     refresh_task = asyncio.create_task(_refresh_services())
 
+    # Start dispatcher loop to route pending jobs to workers
+    dispatcher_task = None
+    try:
+        from laddr.core.dispatcher import Dispatcher
+        from laddr.core.worker_registry import WorkerRegistry
+        from laddr.core.job_templates import TemplateRegistry
+
+        worker_reg = WorkerRegistry()
+        template_reg = TemplateRegistry()
+        dispatcher = Dispatcher(worker_reg, template_reg, redis_client=redis_client)
+        dispatcher_task = asyncio.create_task(dispatcher.run())
+        logger.info("Dispatcher started")
+    except Exception:
+        logger.exception("Failed to start dispatcher")
+
     logger.info("Laddr API server started")
     logger.info(f"Database: {config.database_url}")
     logger.info(f"Queue: {config.queue_backend}")
 
     yield
 
+    if dispatcher_task:
+        dispatcher_task.cancel()
     refresh_task.cancel()
 
     # Shutdown executor
