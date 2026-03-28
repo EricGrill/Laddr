@@ -14,6 +14,15 @@ var _floor_node: Node2D = null
 var _job_delivery: Node2D = null
 var _sidious: Node2D = null
 var _triage_droid: Node2D = null
+var _camera: Camera2D = null
+var _ambient_root: Node2D = null
+var _ambient_orbits: Array = []
+var _ambient_time: float = 0.0
+var _world_emphasis: float = 0.0
+var _floor_dark_tex: Texture2D = null
+var _floor_light_tex: Texture2D = null
+var _suppress_reactions: bool = false
+var _overflow_active: bool = false
 
 # Grid layout — wider spacing for bigger sprites
 const TILE_SIZE = 64
@@ -36,16 +45,22 @@ const DYNAMIC_SPACING = Vector2(5, 0)
 
 func _ready() -> void:
 	add_to_group("world_builder")
+	set_process(true)
 	station_types = _load_json(STATION_TYPES_PATH)
 	iso.setup(TILE_SIZE)
+	_camera = get_parent().get_node_or_null("Camera")
 
 	_draw_floor_grid()
+	_build_ambient_layer()
 	_setup_job_delivery()
 
 	WorldState.snapshot_loaded.connect(_on_snapshot_loaded)
 	WorldState.worker_changed.connect(_on_worker_changed)
 	WorldState.worker_removed.connect(_on_worker_removed)
 	WorldState.station_changed.connect(_on_station_changed)
+	WorldState.job_completed.connect(_on_job_completed)
+	WorldState.job_failed.connect(_on_job_failed)
+	WorldState.metrics_changed.connect(_on_metrics_changed)
 	FilterState.filters_changed.connect(_on_filters_changed)
 
 
@@ -65,15 +80,15 @@ func _draw_floor_grid() -> void:
 	_floor_node.z_index = -5
 	add_child(_floor_node)
 
-	var tile_dark = load("res://assets/sprites/tiles/floor_tile_dark.png")
-	var tile_light = load("res://assets/sprites/tiles/floor_tile_light.png")
+	_floor_dark_tex = load("res://assets/sprites/tiles/floor_tile_dark.png")
+	_floor_light_tex = load("res://assets/sprites/tiles/floor_tile_light.png")
 
 	for gx in range(GRID_W):
 		for gy in range(GRID_H):
 			var screen_pos = iso.grid_to_screen(Vector2(gx, gy))
-			if tile_dark and tile_light:
+			if _floor_dark_tex and _floor_light_tex:
 				var sprite = Sprite2D.new()
-				sprite.texture = tile_dark if (gx + gy) % 2 == 0 else tile_light
+				sprite.texture = _floor_dark_tex if (gx + gy) % 2 == 0 else _floor_light_tex
 				sprite.position = screen_pos
 				sprite.scale = Vector2(1.0, 1.0)
 				# Fade edges for softer look
@@ -94,6 +109,93 @@ func _draw_floor_grid() -> void:
 				_floor_node.add_child(tile)
 
 
+func _build_ambient_layer() -> void:
+	if _ambient_root:
+		_ambient_root.queue_free()
+	_ambient_root = Node2D.new()
+	_ambient_root.name = "AmbientLayer"
+	_ambient_root.z_index = -4
+	add_child(_ambient_root)
+	_ambient_orbits.clear()
+
+	if not _floor_light_tex:
+		return
+
+	var anchors = [
+		{"center": iso.grid_to_screen(Vector2(10, 7)), "radius": Vector2(170, 60), "speed": 0.16, "phase": 0.0, "scale": 1.75, "color": Color(0.25, 0.9, 1.0, 0.10)},
+		{"center": iso.grid_to_screen(Vector2(8, 7)), "radius": Vector2(96, 34), "speed": 0.28, "phase": 1.3, "scale": 1.2, "color": Color(0.35, 0.8, 1.0, 0.08)},
+		{"center": iso.grid_to_screen(Vector2(13, 3)), "radius": Vector2(88, 30), "speed": 0.21, "phase": 2.1, "scale": 1.1, "color": Color(0.55, 0.65, 1.0, 0.08)},
+		{"center": iso.grid_to_screen(Vector2(3, 4)), "radius": Vector2(72, 26), "speed": 0.24, "phase": 2.8, "scale": 1.0, "color": Color(0.55, 1.0, 0.75, 0.07)},
+	]
+
+	for anchor in anchors:
+		var sprite = Sprite2D.new()
+		sprite.texture = _floor_light_tex
+		sprite.centered = true
+		sprite.scale = Vector2.ONE * float(anchor["scale"])
+		sprite.modulate = anchor["color"]
+		_ambient_root.add_child(sprite)
+		_ambient_orbits.append({
+			"node": sprite,
+			"center": anchor["center"],
+			"radius": anchor["radius"],
+			"speed": anchor["speed"],
+			"phase": anchor["phase"],
+			"base_color": anchor["color"],
+			"base_scale": float(anchor["scale"]),
+			"spin": randf_range(-0.2, 0.2),
+		})
+
+
+func _react_to_event(zoom_delta: float, shake_strength: float, duration: float, emphasis: float) -> void:
+	_world_emphasis = maxf(_world_emphasis, emphasis)
+	if _camera and _camera.has_method("pulse_attention"):
+		_camera.call("pulse_attention", zoom_delta, shake_strength, duration)
+
+
+func _process(delta: float) -> void:
+	_ambient_time += delta
+	_world_emphasis = maxf(0.0, _world_emphasis - delta * 0.45)
+	_update_ambient_layer()
+
+
+func _update_ambient_layer() -> void:
+	if _floor_node:
+		var floor_alpha = clampf(0.92 + sin(_ambient_time * 0.28) * 0.025 + _world_emphasis * 0.05, 0.82, 1.0)
+		_floor_node.modulate = Color(1.0, 1.0, 1.0, floor_alpha)
+
+	if not _ambient_root:
+		return
+
+	_ambient_root.modulate.a = clampf(0.85 + _world_emphasis * 0.15, 0.75, 1.0)
+
+	for orbit in _ambient_orbits:
+		var sprite = orbit.get("node")
+		if not (sprite is Sprite2D):
+			continue
+		if not is_instance_valid(sprite):
+			continue
+		var center: Vector2 = orbit.get("center", Vector2.ZERO)
+		var radius: Vector2 = orbit.get("radius", Vector2.ZERO)
+		var speed: float = float(orbit.get("speed", 0.2))
+		var phase: float = float(orbit.get("phase", 0.0))
+		var base_color: Color = orbit.get("base_color", Color.WHITE)
+		var base_scale: float = float(orbit.get("base_scale", 1.0))
+		var wobble = Vector2(
+			cos(_ambient_time * speed + phase) * radius.x,
+			sin(_ambient_time * speed * 1.35 + phase * 1.2) * radius.y
+		)
+		sprite.position = center + wobble + Vector2(0, sin(_ambient_time * 0.6 + phase) * 4.0)
+		sprite.rotation = sin(_ambient_time * 0.35 + phase) * 0.08 + float(orbit.get("spin", 0.0)) * _ambient_time
+		sprite.scale = Vector2.ONE * base_scale * (1.0 + sin(_ambient_time * (speed * 4.0) + phase) * 0.08)
+		sprite.modulate = Color(
+			base_color.r,
+			base_color.g,
+			base_color.b,
+			clampf(base_color.a * (0.75 + _world_emphasis * 0.35) * (0.85 + sin(_ambient_time * 1.8 + phase) * 0.15), 0.02, 0.32)
+		)
+
+
 func _on_snapshot_loaded() -> void:
 	if _snapshot_processed:
 		for worker_id in WorldState.workers:
@@ -105,7 +207,9 @@ func _on_snapshot_loaded() -> void:
 	_build_from_snapshot()
 
 	# Distribute jobs to stations for queue visuals
+	_suppress_reactions = true
 	_distribute_jobs()
+	_suppress_reactions = false
 
 	# Tell job delivery system where intake is
 	if _job_delivery and _job_delivery.has_method("set_intake_position"):
@@ -334,7 +438,16 @@ func _spawn_triage_droid() -> void:
 
 
 func _on_station_changed(_station_id: String) -> void:
-	pass
+	if _suppress_reactions:
+		return
+	var data = WorldState.stations.get(_station_id, {})
+	if data.is_empty():
+		return
+	var capacity = max(int(data.get("capacity", 1)), 1)
+	var queue_depth = int(data.get("queueDepth", 0))
+	var saturation = float(queue_depth) / float(capacity)
+	if saturation >= 0.85:
+		_react_to_event(0.01 + saturation * 0.015, 1.5 + saturation * 3.0, 0.16 + saturation * 0.05, saturation * 0.5)
 
 
 func _on_worker_changed(worker_id: String, is_new: bool) -> void:
@@ -346,6 +459,22 @@ func _on_worker_removed(worker_id: String) -> void:
 	if agent_nodes.has(worker_id):
 		agent_nodes[worker_id].queue_free()
 		agent_nodes.erase(worker_id)
+		_react_to_event(0.02, 2.0, 0.12, 0.2)
+
+
+func _on_job_completed(_job_id: String) -> void:
+	_react_to_event(0.02, 1.2, 0.12, 0.18)
+
+
+func _on_job_failed(_job_id: String, _reason: String) -> void:
+	_react_to_event(0.05, 3.5, 0.22, 0.45)
+
+
+func _on_metrics_changed() -> void:
+	var overflow = bool(WorldState.metrics.get("overflowActive", false))
+	if overflow and not _overflow_active:
+		_react_to_event(0.06, 4.5, 0.25, 0.6)
+	_overflow_active = overflow
 
 
 func _spawn_agent(worker_id: String) -> void:

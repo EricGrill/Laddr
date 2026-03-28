@@ -8,10 +8,14 @@ extends Control
 
 var _selected_type: String = ""
 var _selected_id: String = ""
+var _panel_tween: Tween = null
+var _panel_offset: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
 	panel.visible = false
+	_panel_offset = panel.position
+	panel.pivot_offset = panel.size / 2.0
 	EventBus.entity_selected.connect(_on_entity_selected)
 	EventBus.entity_deselected.connect(_on_entity_deselected)
 	# Update on state changes
@@ -23,14 +27,14 @@ func _ready() -> void:
 func _on_entity_selected(entity_type: String, entity_id: String) -> void:
 	_selected_type = entity_type
 	_selected_id = entity_id
-	panel.visible = true
+	_show_panel()
 	_refresh()
 
 
 func _on_entity_deselected() -> void:
 	_selected_type = ""
 	_selected_id = ""
-	panel.visible = false
+	_hide_panel()
 
 
 func _refresh_if_selected(entity_type: String, entity_id: String) -> void:
@@ -79,6 +83,40 @@ func _show_agent() -> void:
 		text += "[b]Current Job:[/b] %s\n" % str(agent_data.get("currentJobId", "none"))
 
 	details_label.text = text
+
+
+func _show_panel() -> void:
+	if not panel:
+		return
+	if _panel_tween and _panel_tween.is_running():
+		_panel_tween.kill()
+
+	panel.visible = true
+	panel.modulate = Color(1, 1, 1, 0.0)
+	panel.scale = Vector2(0.98, 0.98)
+	panel.position = _panel_offset + Vector2(18.0, 0.0)
+	_panel_tween = create_tween()
+	_panel_tween.set_parallel(true)
+	_panel_tween.tween_property(panel, "modulate", Color(1, 1, 1, 1.0), 0.22).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_panel_tween.tween_property(panel, "scale", Vector2.ONE, 0.24).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_panel_tween.tween_property(panel, "position", _panel_offset, 0.24).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+
+
+func _hide_panel() -> void:
+	if not panel:
+		return
+	if _panel_tween and _panel_tween.is_running():
+		_panel_tween.kill()
+
+	_panel_tween = create_tween()
+	_panel_tween.set_parallel(true)
+	_panel_tween.tween_property(panel, "modulate", Color(1, 1, 1, 0.0), 0.16).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	_panel_tween.tween_property(panel, "scale", Vector2(0.98, 0.98), 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_panel_tween.tween_property(panel, "position", _panel_offset + Vector2(20.0, 0.0), 0.18).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	_panel_tween.finished.connect(func():
+		if panel:
+			panel.visible = false
+	)
 
 
 func _show_job() -> void:

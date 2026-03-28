@@ -54,9 +54,13 @@ func setup(id: String, nav: NavGraph, color: Color) -> void:
 
 func _ready() -> void:
 	if animator:
-		animator.body_sprite = body
-		animator.agent_sprite = agent_sprite
-		animator.mover = mover
+		animator.set_body_sprite(body)
+		animator.set_agent_sprite(agent_sprite)
+		animator.set_mover(mover)
+		animator.set_packet_sprite(job_packet_visual)
+		animator.set_shadow_node($Body.get_node_or_null("Shadow"))
+		animator.set_aura_node($Body.get_node_or_null("Aura"))
+		animator.agent_color = agent_color
 
 	if mover:
 		mover.arrived.connect(_on_arrived)
@@ -167,10 +171,14 @@ func _update_status_card() -> void:
 		else:
 			status_text.text = "%d job%s" % [active, "s" if active != 1 else ""]
 
+		var card_pulse = 1.0 + sin(Time.get_ticks_msec() / 1000.0 * 2.0) * 0.015
 		status_card.position.y = -75 + sin(Time.get_ticks_msec() / 1000.0 * 1.5) * 3.0
+		status_card.scale = Vector2.ONE * card_pulse
 	else:
 		if status_card.visible and current_state == State.IDLE:
 			status_card.visible = false
+		else:
+			status_card.scale = Vector2.ONE
 
 
 func _simulate_activity() -> void:
@@ -345,6 +353,7 @@ func _apply_role_visuals() -> void:
 	# Use the worker's display name from backend, fallback to ID with suffix stripped
 	var worker_data = WorldState.workers.get(worker_id, {})
 	var worker_name = worker_data.get("name", worker_id).to_lower().strip_edges()
+	var motion_role = role if role != "" else ROLES[worker_id.hash() % ROLES.size()]
 	# Also try stripping -01, -02 etc suffix from the ID
 	if worker_name == "" or worker_name == worker_id:
 		var parts = worker_id.to_lower().split("-")
@@ -360,11 +369,10 @@ func _apply_role_visuals() -> void:
 			_sprite_textures[dir] = tex
 			found_worker_sprite = true
 
-	# Fallback to role-based sprites
 	if not found_worker_sprite:
-		var actual_role = role if role != "" else ROLES[worker_id.hash() % ROLES.size()]
+		# Fallback to role-based sprites when no custom worker art exists.
 		for dir in DIRECTIONS:
-			var path = SPRITE_BASE + actual_role + "/" + actual_role + "_" + dir + ".png"
+			var path = SPRITE_BASE + motion_role + "/" + motion_role + "_" + dir + ".png"
 			var tex = load(path)
 			if tex:
 				_sprite_textures[dir] = tex
@@ -372,6 +380,8 @@ func _apply_role_visuals() -> void:
 	if _sprite_textures.has("front"):
 		agent_sprite.texture = _sprite_textures["front"]
 	if animator:
+		animator.agent_color = agent_color
+		animator.set_role_profile(motion_role)
 		animator.set_role_textures(_sprite_textures)
 
 

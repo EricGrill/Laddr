@@ -1,6 +1,7 @@
 extends Control
 ## Left sidebar: agent roster and station queue dashboard.
 
+@onready var panel: PanelContainer = $PanelContainer
 @onready var agent_list: VBoxContainer = $PanelContainer/VBox/AgentList
 @onready var station_list: VBoxContainer = $PanelContainer/VBox/StationList
 @onready var toggle_button: Button = $ToggleButton
@@ -9,6 +10,8 @@ var _collapsed: bool = false
 var _agent_rows: Dictionary = {}  # worker_id → HBoxContainer
 var _station_rows: Dictionary = {}  # station_id → HBoxContainer
 var _filter_section: VBoxContainer = null
+var _panel_tween: Tween = null
+var _panel_offset: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
@@ -19,6 +22,9 @@ func _ready() -> void:
 	WorldState.station_changed.connect(_on_station_changed)
 	if toggle_button:
 		toggle_button.pressed.connect(_toggle_collapse)
+	if panel:
+		_panel_offset = panel.position
+		panel.pivot_offset = panel.size / 2.0
 	_build_filter_section()
 
 
@@ -91,9 +97,38 @@ func _make_filter_row(label_text: String, category: String, options: Array) -> H
 
 func _toggle_collapse() -> void:
 	_collapsed = not _collapsed
-	$PanelContainer.visible = not _collapsed
+	_animate_panel(not _collapsed)
 	if toggle_button:
 		toggle_button.text = ">" if _collapsed else "<"
+
+
+func _animate_panel(show: bool) -> void:
+	if not panel:
+		return
+	if _panel_tween and _panel_tween.is_running():
+		_panel_tween.kill()
+
+	if show:
+		panel.visible = true
+		panel.modulate = Color(1, 1, 1, 0.0)
+		panel.scale = Vector2(0.98, 0.98)
+		panel.position = _panel_offset + Vector2(-18.0, 0.0)
+		_panel_tween = create_tween()
+		_panel_tween.set_parallel(true)
+		_panel_tween.tween_property(panel, "modulate", Color(1, 1, 1, 1.0), 0.22).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		_panel_tween.tween_property(panel, "scale", Vector2.ONE, 0.24).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		_panel_tween.tween_property(panel, "position", _panel_offset, 0.26).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		return
+
+	_panel_tween = create_tween()
+	_panel_tween.set_parallel(true)
+	_panel_tween.tween_property(panel, "modulate", Color(1, 1, 1, 0.0), 0.18).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	_panel_tween.tween_property(panel, "scale", Vector2(0.98, 0.98), 0.2).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_panel_tween.tween_property(panel, "position", _panel_offset + Vector2(-22.0, 0.0), 0.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	_panel_tween.finished.connect(func():
+		if panel:
+			panel.visible = false
+	)
 
 
 func _rebuild_all() -> void:

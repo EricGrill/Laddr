@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/world_builder.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/world/iso_camera.gd" id="2"]
@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/inspector.tscn" id="4"]
 [ext_resource type="PackedScene" path="res://scenes/ui/mission_panel.tscn" id="5"]
 [ext_resource type="PackedScene" path="res://scenes/ui/job_board.tscn" id="6"]
+[ext_resource type="Script" path="res://scripts/world/job_transit_manager.gd" id="7"]
 
 [node name="Main" type="Node2D"]
 
@@ -14,6 +15,9 @@
 [node name="WorldBuilder" type="Node2D" parent="."]
 y_sort_enabled = true
 script = ExtResource("1")
+
+[node name="JobTransitManager" type="Node2D" parent="WorldBuilder"]
+script = ExtResource("7")
 
 [node name="Camera" type="Camera2D" parent="."]
 script = ExtResource("2")

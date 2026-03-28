@@ -3,10 +3,13 @@ extends Control
 
 @onready var title_label: Label = $VBox/Header/Title
 @onready var stats_label: Label = $VBox/Header/StatsLabel
+@onready var top_border: ColorRect = $TopBorder
 @onready var job_list: HBoxContainer = $VBox/ScrollContainer/JobList
 
 var _job_cards: Dictionary = {}  # job_id -> PanelContainer
 var _update_timer: float = 0.0
+var _time: float = 0.0
+var _last_render_signature: String = ""
 
 
 func _ready() -> void:
@@ -26,9 +29,13 @@ func _ready() -> void:
 		ss.font_size = 12
 		ss.font_color = Color(0.7, 0.8, 0.85, 0.9)
 		stats_label.label_settings = ss
+	if top_border:
+		top_border.color = Color(0.2, 0.85, 0.95, 0.7)
 
 
 func _process(delta: float) -> void:
+	_time += delta
+	_update_live_pulse()
 	_update_timer -= delta
 	if _update_timer <= 0:
 		_update_timer = 2.0
@@ -36,6 +43,12 @@ func _process(delta: float) -> void:
 
 
 func _rebuild() -> void:
+	var signature = _build_render_signature()
+	_update_stats_from_world()
+	if signature == _last_render_signature:
+		return
+	_last_render_signature = signature
+
 	# Clear old cards
 	for child in job_list.get_children():
 		child.queue_free()
@@ -72,12 +85,17 @@ func _rebuild() -> void:
 	for job in display_jobs:
 		var card = _create_job_card(job)
 		job_list.add_child(card)
-		_job_cards[job.get("id", "")] = card
+		var jid = job.get("id", "")
+		_job_cards[jid] = card
+		_animate_card_entry(card, job.get("state", "queued"))
 
 
 func _create_job_card(job: Dictionary) -> PanelContainer:
 	var panel = PanelContainer.new()
 	panel.custom_minimum_size = Vector2(240, 170)
+	panel.modulate = Color(1, 1, 1, 0)
+	panel.scale = Vector2(0.96, 0.96)
+	panel.pivot_offset = panel.custom_minimum_size / 2.0
 
 	# Style the panel
 	var style = StyleBoxFlat.new()
@@ -99,9 +117,26 @@ func _create_job_card(job: Dictionary) -> PanelContainer:
 	style.set_corner_radius_all(6)
 	style.set_content_margin_all(10)
 	panel.add_theme_stylebox_override("panel", style)
+	panel.set_meta("job_state", state)
+	panel.set_meta("pulse_seed", randf_range(0.0, TAU))
 
 	var vbox = VBoxContainer.new()
 	panel.add_child(vbox)
+
+	var pulse = ColorRect.new()
+	pulse.name = "PulseStrip"
+	pulse.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pulse.custom_minimum_size = Vector2(0, 3)
+	pulse.anchor_left = 0.0
+	pulse.anchor_top = 0.0
+	pulse.anchor_right = 1.0
+	pulse.anchor_bottom = 0.0
+	pulse.offset_left = 0.0
+	pulse.offset_top = 0.0
+	pulse.offset_right = 0.0
+	pulse.offset_bottom = 3.0
+	pulse.color = _state_color(state, 0.0)
+	panel.add_child(pulse)
 
 	# State badge
 	var state_label = Label.new()
@@ -201,10 +236,11 @@ func _extract_title(raw: String) -> String:
 
 func _on_job_changed(_job_id: String) -> void:
 	# Will be refreshed on next timer tick
-	pass
+	_update_timer = 0
 
 
 func _update_stats() -> void:
+	_update_stats_from_world()
 	_update_timer = 0  # Force rebuild on next frame
 
 
@@ -217,3 +253,102 @@ func _update_stats_from_counts(processing: int, queued: int, completed: int, fai
 		stats_label.text = "Queued: %d | Processing: %d | Done: %d | Failed: %d" % [
 			queued, processing, completed, failed
 		]
+
+
+func _update_stats_from_world() -> void:
+	var processing = 0
+	var queued = 0
+	var completed = 0
+	var failed = 0
+	for jid in WorldState.jobs:
+		var job = WorldState.jobs[jid]
+		var state = job.get("state", "queued")
+		match state:
+			"processing":
+				processing += 1
+			"queued":
+				queued += 1
+			"completed":
+				completed += 1
+			"failed":
+				failed += 1
+	_update_stats_from_counts(processing, queued, completed, failed)
+
+
+func _build_render_signature() -> String:
+	var parts: Array[String] = []
+	for jid in WorldState.jobs:
+		parts.append(_job_state_signature(WorldState.jobs[jid]))
+	parts.sort()
+	return "|".join(parts)
+
+
+func _job_state_signature(job: Dictionary) -> String:
+	return "%s:%s:%s:%s:%s" % [
+		str(job.get("id", "")),
+		str(job.get("state", "queued")),
+		str(job.get("priority", "normal")),
+		str(job.get("assignedAgentId", "")),
+		str(job.get("currentStationId", "")),
+	]
+
+
+func _animate_card_entry(card: PanelContainer, state: String) -> void:
+	if not card:
+		return
+	var tween = card.create_tween()
+	tween.set_parallel(true)
+	var duration = 0.22
+	if state == "processing":
+		duration = 0.26
+	elif state == "failed":
+		duration = 0.24
+	tween.tween_property(card, "modulate", Color(1, 1, 1, 1.0), duration).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tween.tween_property(card, "scale", Vector2.ONE, duration + 0.02).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+func _update_live_pulse() -> void:
+	if not top_border:
+		return
+	var processing = 0
+	for jid in WorldState.jobs:
+		if WorldState.jobs[jid].get("state", "queued") == "processing":
+			processing += 1
+	var pulse = 0.0
+	if processing > 0:
+		pulse = 0.12 + sin(_time * 2.2) * 0.08
+		top_border.color = Color(0.2 + pulse, 0.82 + pulse * 0.8, 0.95, 0.55 + pulse)
+	else:
+		top_border.color = Color(0.2, 0.85, 0.95, 0.45)
+
+	for jid in _job_cards:
+		var card = _job_cards[jid]
+		if not card:
+			continue
+		var state = str(card.get_meta("job_state", "queued"))
+		var seed = float(card.get_meta("pulse_seed", 0.0))
+		var strip = card.get_node_or_null("PulseStrip")
+		if strip and strip is ColorRect:
+			strip.color = _state_color(state, 0.12 if state == "queued" else 0.2)
+			if state == "processing":
+				strip.color.a = 0.2 + sin(_time * 3.0 + seed) * 0.12
+			elif state == "completed":
+				strip.color.a = 0.14 + sin(_time * 1.8 + seed) * 0.06
+			elif state == "failed":
+				strip.color.a = 0.18 + sin(_time * 6.0 + seed) * 0.12
+			else:
+				strip.color.a = 0.08 + sin(_time * 1.4 + seed) * 0.04
+
+
+func _state_color(state: String, alpha: float = 1.0) -> Color:
+	match state:
+		"processing":
+			return Color(0.2, 0.85, 0.95, alpha)
+		"completed":
+			return Color(0.35, 0.8, 0.45, alpha)
+		"failed":
+			return Color(0.95, 0.35, 0.35, alpha)
+		"queued":
+			return Color(0.6, 0.6, 0.7, alpha)
+		_:
+			return Color(0.5, 0.7, 0.9, alpha)
