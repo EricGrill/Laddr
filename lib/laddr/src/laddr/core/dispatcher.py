@@ -22,7 +22,7 @@ DISPATCHER_CONSUMER = "dispatcher-0"
 
 # Overflow thresholds
 OVERFLOW_QUEUE_THRESHOLD = 100  # Queue depth that triggers Venice overflow
-OVERFLOW_DAILY_BUDGET_USD = 5.0  # Max daily Venice spend
+OVERFLOW_DAILY_BUDGET_USD = 25.0  # Max daily Venice spend
 OVERFLOW_BUDGET_KEY = "laddr:overflow:daily_spend"
 OVERFLOW_BUDGET_DATE_KEY = "laddr:overflow:budget_date"
 
