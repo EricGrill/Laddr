@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import hmac
 import json
@@ -360,6 +360,44 @@ class DatabaseService:
                 }
                 for prompt in prompts
             ]
+
+    def count_executions_by_bucket(self, since_minutes: int) -> dict[str, int]:
+        """Count PromptExecution rows by status within the last N minutes.
+
+        Returns {"inbound": N, "completed": N, "failed": N} where:
+        - inbound = rows with created_at in the window
+        - completed = rows with completed_at in window and status="completed"
+        - failed = rows with completed_at in window and status="failed"
+        """
+        from sqlalchemy import func
+
+        cutoff = datetime.utcnow() - timedelta(minutes=since_minutes)
+        with self.get_session() as session:
+            inbound = (
+                session.query(func.count())
+                .select_from(PromptExecution)
+                .filter(PromptExecution.created_at >= cutoff)
+                .scalar()
+            )
+            completed = (
+                session.query(func.count())
+                .select_from(PromptExecution)
+                .filter(
+                    PromptExecution.completed_at >= cutoff,
+                    PromptExecution.status == "completed",
+                )
+                .scalar()
+            )
+            failed = (
+                session.query(func.count())
+                .select_from(PromptExecution)
+                .filter(
+                    PromptExecution.completed_at >= cutoff,
+                    PromptExecution.status == "failed",
+                )
+                .scalar()
+            )
+        return {"inbound": inbound, "completed": completed, "failed": failed}
 
     def get_job_traces(self, job_ids: str | list[str]) -> list[dict]:
         """Get all traces for one or more jobs."""
