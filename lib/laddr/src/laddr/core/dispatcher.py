@@ -352,7 +352,18 @@ class Dispatcher:
         # Build stream dict for XREADGROUP
         streams = {priority_stream_key(p): ">" for p in PRIORITY_LEVELS}
 
+        # Counter sync timer — every 30s, reconcile active counters
+        # with actual worker heartbeat data to prevent counter drift
+        counter_sync_interval = 30.0
+        counter_sync_timer = counter_sync_interval
+
         while self._running:
+            # Periodic counter reconciliation
+            counter_sync_timer -= 1.0  # ~1s per loop iteration (block=1000ms)
+            if counter_sync_timer <= 0:
+                counter_sync_timer = counter_sync_interval
+                await self._sync_active_counters()
+
             # Check waiting queue first each iteration
             if self._waiting:
                 await self._process_waiting()
@@ -401,6 +412,40 @@ class Dispatcher:
                             "msg_id": msg_id,
                         })
                         logger.info("No worker available — job added to waiting list")
+
+    async def _sync_active_counters(self) -> None:
+        """Reconcile dispatcher active counters with worker heartbeat data.
+
+        Workers report their actual active_jobs in heartbeats. If the
+        dispatcher counter is higher (due to crashed jobs that never
+        decremented), reset it to the worker's reported value.
+        """
+        if not self.redis:
+            return
+        try:
+            raw = await self.redis.hgetall("laddr:workers:registry")
+            for _wid, data in raw.items():
+                w = json.loads(data)
+                wid = w.get("worker_id", "")
+                if not wid:
+                    continue
+                actual_active = w.get("active_jobs", 0)
+                if isinstance(actual_active, str):
+                    actual_active = int(actual_active)
+                active_key = f"laddr:workers:active:{wid}"
+                try:
+                    counter_val = int(await self.redis.get(active_key) or 0)
+                except (ValueError, TypeError):
+                    counter_val = 0
+                # If counter is higher than reality, sync it down
+                if counter_val > actual_active:
+                    await self.redis.set(active_key, actual_active)
+                    logger.info(
+                        "Counter sync: %s was %d, actual %d — corrected",
+                        wid, counter_val, actual_active,
+                    )
+        except Exception as exc:
+            logger.warning("Counter sync failed: %s", exc)
 
     def stop(self) -> None:
         """Signal the dispatch loop to stop."""
