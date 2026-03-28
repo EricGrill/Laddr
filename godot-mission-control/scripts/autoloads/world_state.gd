@@ -15,6 +15,7 @@ signal agent_changed(agent_id: String)
 signal job_changed(job_id: String)
 signal station_changed(station_id: String)
 signal job_completed(job_id: String)
+signal job_created(job_id: String)
 signal job_failed(job_id: String, reason: String)
 signal metrics_changed()
 signal worker_changed(worker_id: String, is_new: bool)
@@ -57,6 +58,7 @@ func handle_agent_updated(agent: Dictionary) -> void:
 
 func handle_job_created(job: Dictionary) -> void:
 	jobs[job["id"]] = job
+	job_created.emit(job["id"])
 	job_changed.emit(job["id"])
 
 
