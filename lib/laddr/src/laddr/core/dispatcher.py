@@ -327,8 +327,18 @@ class Dispatcher:
             priority_stream_key(p): "0-0" for p in PRIORITY_LEVELS
         }
 
+        rescan_interval = 5.0  # Rescan from beginning every 5 seconds
+        rescan_timer = rescan_interval
+
         while self._running:
-            # Read new messages from all priority streams
+            # Periodically reset cursors to rescan undispatched messages
+            rescan_timer -= 0.2
+            if rescan_timer <= 0:
+                rescan_timer = rescan_interval
+                for k in last_ids:
+                    last_ids[k] = "0-0"
+
+            # Read messages from all priority streams
             streams = {k: v for k, v in last_ids.items()}
             try:
                 result = await self.redis.xread(
