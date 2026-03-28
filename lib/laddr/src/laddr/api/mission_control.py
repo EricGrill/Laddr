@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import asyncio
+import copy as _copy
 import json
 import logging
 import time
+import time as _time
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -213,6 +215,63 @@ def _fixed_stations() -> list[dict]:
         {"id": "output-dock", "type": "output", "label": "Output Dock", "state": "active",
          "capacity": 100, "queueDepth": 0, "activeJobIds": [], "workerId": None},
     ]
+
+
+# Module-level capacity imbalance tracking (system-wide, not per-connection).
+# Server restarts reset to healthy — self-corrects within 5 minutes.
+_imbalance_start_time: float | None = None
+
+_ZERO_THROUGHPUT = {
+    "inbound": {"5m": 0, "1h": 0, "24h": 0},
+    "completed": {"5m": 0, "1h": 0, "24h": 0},
+    "failed": {"5m": 0, "1h": 0, "24h": 0},
+    "capacity": {"status": "healthy", "saturation": 0.0, "imbalanceSustainedMinutes": 0},
+}
+
+
+def _compute_throughput(database) -> dict:
+    """Compute throughput rates and capacity status from the database."""
+    global _imbalance_start_time
+
+    if not database:
+        return _copy.deepcopy(_ZERO_THROUGHPUT)
+
+    b5 = database.count_executions_by_bucket(since_minutes=5)
+    b15 = database.count_executions_by_bucket(since_minutes=15)
+    b60 = database.count_executions_by_bucket(since_minutes=60)
+    b1440 = database.count_executions_by_bucket(since_minutes=1440)
+
+    # Saturation: how much of hourly inbound is being cleared
+    saturation = min(b60["completed"] / max(b60["inbound"], 1), 1.0)
+
+    # Capacity detection: sustained imbalance over 15-minute window
+    imbalanced = b15["inbound"] > b15["completed"] * 1.2
+
+    if imbalanced:
+        if _imbalance_start_time is None:
+            _imbalance_start_time = _time.time()
+        sustained_minutes = (_time.time() - _imbalance_start_time) / 60.0
+    else:
+        _imbalance_start_time = None
+        sustained_minutes = 0.0
+
+    if sustained_minutes >= 15:
+        status = "critical"
+    elif sustained_minutes >= 5:
+        status = "warning"
+    else:
+        status = "healthy"
+
+    return {
+        "inbound": {"5m": b5["inbound"], "1h": b60["inbound"], "24h": b1440["inbound"]},
+        "completed": {"5m": b5["completed"], "1h": b60["completed"], "24h": b1440["completed"]},
+        "failed": {"5m": b5["failed"], "1h": b60["failed"], "24h": b1440["failed"]},
+        "capacity": {
+            "status": status,
+            "saturation": round(saturation, 2),
+            "imbalanceSustainedMinutes": round(sustained_minutes, 1),
+        },
+    }
 
 
 async def _build_snapshot(deps: dict) -> dict:
