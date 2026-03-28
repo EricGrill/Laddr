@@ -7,6 +7,8 @@ signal connection_state_changed(state: String)  # "connecting", "connected", "di
 @export var server_url: String = "ws://localhost:8000/ws/mission-control"
 
 var _socket: WebSocketPeer = WebSocketPeer.new()
+## Increase buffer sizes for large snapshot payloads (default 64KB is too small).
+const BUFFER_SIZE: int = 1048576  # 1 MB
 var _connected: bool = false
 var _reconnect_attempts: int = 0
 var _max_reconnect_attempts: int = 10
@@ -36,6 +38,8 @@ func _ready() -> void:
 
 func connect_to_server() -> void:
 	_set_connection_state("connecting")
+	_socket.inbound_buffer_size = BUFFER_SIZE
+	_socket.outbound_buffer_size = BUFFER_SIZE
 	var err = _socket.connect_to_url(server_url)
 	if err != OK:
 		push_error("WebSocket connection failed: %s" % err)
