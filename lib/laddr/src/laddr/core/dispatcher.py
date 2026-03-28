@@ -268,32 +268,30 @@ class Dispatcher:
             return False
 
         worker_id = worker["worker_id"]
-        active_key = f"laddr:workers:active:{worker_id}"
+        target_stream = worker_stream_key(worker_id)
 
-        # Atomic INCR for back-pressure
+        # Check real capacity: stream pending + heartbeat active
+        max_concurrent = worker.get("capabilities", {}).get("max_concurrent", 1)
         try:
-            await self.redis.incr(active_key)
-        except Exception as exc:
-            logger.error("INCR failed for %s: %s", worker_id, exc)
-            return False
+            stream_pending = await self.redis.xlen(target_stream)
+        except Exception:
+            stream_pending = 0
+        actual_active = worker.get("active_jobs", 0)
+        total_load = stream_pending + actual_active
+
+        if total_load >= max_concurrent:
+            return False  # Worker is full
 
         # Route to per-worker stream
-        target_stream = worker_stream_key(worker_id)
         try:
             await self.redis.xadd(target_stream, {"job": json.dumps(job)})
         except Exception as exc:
-            # XADD failed — DECR back to prevent counter leak
-            logger.error("XADD to %s failed: %s — rolling back counter", target_stream, exc)
-            try:
-                await self.redis.decr(active_key)
-            except Exception:
-                logger.error("DECR rollback also failed for %s", worker_id)
+            logger.error("XADD to %s failed: %s", target_stream, exc)
             return False
 
         # ACK the message from the pending stream
         try:
-            group = DISPATCHER_GROUP
-            await self.redis.xack(stream, group, msg_id)
+            await self.redis.xack(stream, DISPATCHER_GROUP, msg_id)
         except Exception as exc:
             logger.warning("XACK failed on %s/%s: %s", stream, msg_id, exc)
 
@@ -311,19 +309,24 @@ class Dispatcher:
                 continue
 
             worker_id = worker["worker_id"]
-            active_key = f"laddr:workers:active:{worker_id}"
             target_stream = worker_stream_key(worker_id)
 
+            # Check real capacity before dispatch
+            max_concurrent = worker.get("capabilities", {}).get("max_concurrent", 1)
             try:
-                await self.redis.incr(active_key)
+                stream_pending = await self.redis.xlen(target_stream)
+            except Exception:
+                stream_pending = 0
+            actual_active = worker.get("active_jobs", 0)
+            if stream_pending + actual_active >= max_concurrent:
+                still_waiting.append(entry)
+                continue
+
+            try:
                 await self.redis.xadd(target_stream, {"job": json.dumps(job)})
                 logger.info("Dispatched waiting job to worker %s", worker_id)
             except Exception as exc:
                 logger.error("Failed to dispatch waiting job: %s", exc)
-                try:
-                    await self.redis.decr(active_key)
-                except Exception:
-                    pass
                 still_waiting.append(entry)
 
         self._waiting = still_waiting
