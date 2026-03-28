@@ -96,12 +96,47 @@ func _ready() -> void:
 	WorldState.worker_changed.connect(_on_worker_changed)
 	WorldState.metrics_changed.connect(_on_metrics_changed)
 
+	# Deferred initial update — setup() ran before @onready nodes existed
+	call_deferred("_deferred_init")
+
 	if click_area:
 		click_area.input_event.connect(_on_click_area_input)
 
 	var effects = get_node_or_null("StationEffects")
 	if effects:
 		effects.setup(station_type, capacity)
+
+
+func _deferred_init() -> void:
+	# Re-apply setup now that @onready nodes exist
+	if label_node and station_label != "":
+		label_node.text = station_label
+	# Re-apply sprite
+	if sprite_node and station_type != "":
+		var sprite_name = TYPE_TO_SPRITE.get(station_type, station_type)
+		var tex_path = STATION_SPRITE_BASE + sprite_name + ".png"
+		var tex = load(tex_path)
+		if tex:
+			sprite_node.texture = tex
+	# Worker station sizing
+	if station_id.begins_with("station-"):
+		if sprite_node:
+			sprite_node.scale = Vector2(0.8, 0.8)
+		if info_label:
+			info_label.size = Vector2(160, 60)
+			info_label.position = Vector2(-80, 30)
+			var settings = LabelSettings.new()
+			settings.font_size = 11
+			settings.font_color = Color(0.3, 0.9, 1.0, 0.95)
+			settings.outline_size = 2
+			settings.outline_color = Color(0, 0, 0, 0.8)
+			info_label.label_settings = settings
+			info_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+			info_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# Initial data update
+	var data = WorldState.stations.get(station_id, {})
+	if not data.is_empty():
+		_update_from_data(data)
 
 
 func _on_station_changed(changed_id: String) -> void:
