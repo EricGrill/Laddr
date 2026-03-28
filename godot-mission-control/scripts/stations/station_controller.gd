@@ -93,6 +93,8 @@ func _ready() -> void:
 
 	WorldState.station_changed.connect(_on_station_changed)
 	WorldState.snapshot_loaded.connect(_on_snapshot_loaded)
+	WorldState.worker_changed.connect(_on_worker_changed)
+	WorldState.metrics_changed.connect(_on_metrics_changed)
 
 	if click_area:
 		click_area.input_event.connect(_on_click_area_input)
@@ -112,6 +114,20 @@ func _on_station_changed(changed_id: String) -> void:
 func _on_snapshot_loaded() -> void:
 	var data = WorldState.stations.get(station_id, {})
 	if not data.is_empty():
+		_update_from_data(data)
+
+
+func _on_worker_changed(worker_id_changed: String, _is_new: bool) -> void:
+	# If this is our worker station, refresh the display
+	var data = WorldState.stations.get(station_id, {})
+	var our_worker = data.get("workerId", "")
+	if our_worker == worker_id_changed:
+		_update_from_data(data)
+
+
+func _on_metrics_changed() -> void:
+	var data = WorldState.stations.get(station_id, {})
+	if not data.is_empty() and station_id.begins_with("station-"):
 		_update_from_data(data)
 
 
