@@ -10,7 +10,7 @@ var _delivery_queue: Array = []  # Job IDs waiting for delivery animation
 var _delivery_timer: float = 0.0
 var _last_job_count: int = 0
 
-const MAX_VISIBLE_BRICKS = 12
+const MAX_VISIBLE_BRICKS = 6
 const BRICK_WIDTH = 60
 const BRICK_HEIGHT = 16
 const SHIP_SCALE = Vector2(0.8, 0.8)

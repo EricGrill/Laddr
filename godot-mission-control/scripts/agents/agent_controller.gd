@@ -88,18 +88,11 @@ func _ready() -> void:
 	if job_packet_visual:
 		job_packet_visual.visible = false
 
-	# Style status card text
-	if status_text:
-		var st_settings = LabelSettings.new()
-		st_settings.font_size = 13
-		st_settings.font_color = Color(0.85, 0.97, 1.0, 1.0)
-		st_settings.outline_size = 1
-		st_settings.outline_color = Color(0, 0, 0, 0.5)
-		status_text.label_settings = st_settings
-		status_text.autowrap_mode = TextServer.AUTOWRAP_WORD
-
+	# Hide status card — info shown on worker stations instead
 	if status_card:
 		status_card.visible = false
+		status_card.queue_free()
+		status_card = null
 
 	_set_state(State.IDLE)
 	_apply_role_visuals()
@@ -113,16 +106,10 @@ func _process(delta: float) -> void:
 		if _pickup_timer <= 0:
 			_transition_to_carrying()
 
-	# Update label with worker info
+	# Simple name label only — job info shows on worker station
 	if label_node:
 		var worker_data = WorldState.workers.get(worker_id, {})
-		var name = worker_data.get("name", worker_id.left(10))
-		var status = worker_data.get("status", "idle")
-		var active = worker_data.get("activeJobs", 0)
-		if active > 0:
-			label_node.text = "%s (%d jobs)" % [name, active]
-		else:
-			label_node.text = "%s - %s" % [name, status]
+		label_node.text = worker_data.get("name", worker_id.left(10))
 
 	# Update status card
 	_update_status_card()

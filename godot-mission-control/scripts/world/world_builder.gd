@@ -38,10 +38,10 @@ const FIXED_POSITIONS = {
 	"output-dock": Vector2(17, 7),
 }
 
-# Dynamic worker stations — 2-column grid, tighter spacing
-const DYNAMIC_START = Vector2(6, 10)
-const DYNAMIC_COLS = 3
-const DYNAMIC_COL_SPACING = 3.5
+# Dynamic worker stations — top-right area, 2-column grid
+const DYNAMIC_START = Vector2(14, 1)
+const DYNAMIC_COLS = 2
+const DYNAMIC_COL_SPACING = 4
 const DYNAMIC_ROW_SPACING = 3
 
 
@@ -163,9 +163,9 @@ func _build_rooms_and_paths() -> void:
 		var to_pos = iso.grid_to_screen(to_grid)
 		_draw_path_line(rooms_layer, from_pos, to_pos)
 
-	# Path from dispatcher down to worker area
+	# Path from dispatcher to worker area (top-right)
 	var dispatcher_pos = iso.grid_to_screen(FIXED_POSITIONS["dispatcher"])
-	var worker_area_pos = iso.grid_to_screen(DYNAMIC_START + Vector2(DYNAMIC_COL_SPACING, 0))
+	var worker_area_pos = iso.grid_to_screen(DYNAMIC_START + Vector2(0, DYNAMIC_ROW_SPACING))
 	_draw_path_line(rooms_layer, dispatcher_pos, worker_area_pos)
 
 

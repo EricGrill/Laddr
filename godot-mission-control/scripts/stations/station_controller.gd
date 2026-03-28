@@ -74,6 +74,23 @@ func _ready() -> void:
 		if tex:
 			sprite_node.texture = tex
 
+	# Worker stations are bigger — they display info screens
+	var is_worker_station = station_id.begins_with("station-")
+	if is_worker_station:
+		if sprite_node:
+			sprite_node.scale = Vector2(0.8, 0.8)
+		if info_label:
+			info_label.size = Vector2(160, 60)
+			info_label.position = Vector2(-80, 30)
+			var info_settings = LabelSettings.new()
+			info_settings.font_size = 11
+			info_settings.font_color = Color(0.3, 0.9, 1.0, 0.95)
+			info_settings.outline_size = 2
+			info_settings.outline_color = Color(0, 0, 0, 0.8)
+			info_label.label_settings = info_settings
+			info_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+			info_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
 	WorldState.station_changed.connect(_on_station_changed)
 	WorldState.snapshot_loaded.connect(_on_snapshot_loaded)
 
@@ -115,21 +132,52 @@ func _update_from_data(data: Dictionary) -> void:
 		else:
 			sprite_node.modulate = Color.WHITE  # normal
 
-	# Show active job count and worker info below station
+	# Worker stations show model + task on their "screen"
 	if info_label:
-		var active_jobs = data.get("activeJobIds", [])
 		var worker_id_val = data.get("workerId", "")
-		var info_parts = []
 		if worker_id_val != null and worker_id_val != "":
-			# Worker station — show active jobs
-			var active_count = data.get("queueDepth", 0)
-			if active_count > 0:
-				info_parts.append("%d active" % active_count)
+			# This is a worker station — show detailed info
+			var worker_data = WorldState.workers.get(worker_id_val, {})
+			var active = worker_data.get("activeJobs", 0)
+			var caps = worker_data.get("capabilities", [])
+			var lines = []
+
+			# Extract model name
+			for cap in caps:
+				var cap_str = ""
+				if cap is Dictionary:
+					cap_str = str(cap.get("id", ""))
+				else:
+					cap_str = str(cap)
+				var c = cap_str.to_lower()
+				if "embed" in c:
+					continue
+				if "gpt" in c or "claude" in c or "llama" in c or "gemini" in c or "mistral" in c or "qwen" in c or "deepseek" in c or "gemma" in c or "nemotron" in c:
+					var clean = cap_str
+					for prefix in ["openai/", "anthropic/", "google/", "meta/", "mistralai/", "qwen/", "deepseek-ai/", "nvidia/"]:
+						clean = clean.replace(prefix, "")
+					lines.append(clean.left(24))
+					break
+
+			if active > 0:
+				lines.append("%d active" % active)
+				# Find current job title
+				for jid in WorldState.jobs:
+					var job = WorldState.jobs[jid]
+					if job.get("state", "") == "processing":
+						var raw = str(job.get("type", ""))
+						for line in raw.split("\n"):
+							var t = line.strip_edges()
+							if t.begins_with("# "):
+								lines.append(t.substr(2).left(22))
+								break
+						break
 			else:
-				info_parts.append(state)
-		elif not active_jobs.is_empty():
-			info_parts.append("%d jobs" % active_jobs.size())
-		info_label.text = " | ".join(info_parts)
+				lines.append("idle")
+
+			info_label.text = "\n".join(lines)
+		else:
+			info_label.text = state if state != "idle" else ""
 
 	var effects = get_node_or_null("StationEffects")
 	if effects:
