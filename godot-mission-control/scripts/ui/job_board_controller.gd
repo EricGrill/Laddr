@@ -210,6 +210,10 @@ func _update_stats() -> void:
 
 func _update_stats_from_counts(processing: int, queued: int, completed: int, failed: int) -> void:
 	if stats_label:
+		# Use real Redis queue depth if available (DB is capped at 100)
+		var real_q = WorldState.metrics.get("realQueueDepth", queued)
+		if real_q > queued:
+			queued = real_q
 		stats_label.text = "Queued: %d | Processing: %d | Done: %d | Failed: %d" % [
 			queued, processing, completed, failed
 		]

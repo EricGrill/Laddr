@@ -7,6 +7,7 @@ extends Control
 @onready var speed_slider: HSlider = $HBoxContainer/SpeedSlider
 @onready var speed_label: Label = $HBoxContainer/SpeedLabel
 @onready var kiosk_button: Button = $HBoxContainer/KioskButton
+@onready var background: ColorRect = $Background
 
 # Speed values mapped to slider steps 0..3
 const SPEED_VALUES = [0.5, 1.0, 2.0, 4.0]
@@ -32,7 +33,6 @@ func _ready() -> void:
 
 	if kiosk_button:
 		kiosk_button.pressed.connect(_toggle_kiosk)
-		# Style the button
 		kiosk_button.add_theme_color_override("font_color", Color(0.5, 0.85, 0.95, 0.9))
 		kiosk_button.add_theme_color_override("font_hover_color", Color(0.7, 0.95, 1.0, 1.0))
 
@@ -40,7 +40,6 @@ func _ready() -> void:
 func _toggle_kiosk() -> void:
 	_kiosk_mode = not _kiosk_mode
 
-	# Find sibling UI nodes in the UILayer
 	var ui_layer = get_parent()
 	if not ui_layer:
 		return
@@ -50,22 +49,51 @@ func _toggle_kiosk() -> void:
 	var job_board = ui_layer.get_node_or_null("JobBoard")
 
 	if _kiosk_mode:
-		# Hide side panels, keep HUD minimal and job board
+		# Hide ALL side panels and job board
 		if inspector:
 			inspector.visible = false
 		if mission_panel:
 			mission_panel.visible = false
-		# Shrink HUD to just metrics bar
-		offset_bottom = 28.0
+		if job_board:
+			job_board.visible = false
+		# Make HUD transparent and minimal
+		if background:
+			background.color = Color(0.05, 0.05, 0.08, 0.5)
+		# Hide non-essential HUD elements
+		if connection_dot:
+			connection_dot.visible = false
+		if connection_label:
+			connection_label.visible = false
+		if speed_slider:
+			speed_slider.visible = false
+		if speed_label:
+			speed_label.visible = false
+		var prefix = $HBoxContainer.get_node_or_null("SpeedPrefixLabel")
+		if prefix:
+			prefix.visible = false
 		if kiosk_button:
-			kiosk_button.text = "EXIT"
+			kiosk_button.text = "EXIT KIOSK"
 	else:
-		# Restore all panels
+		# Restore everything
 		if inspector:
 			inspector.visible = true
 		if mission_panel:
 			mission_panel.visible = true
-		offset_bottom = 40.0
+		if job_board:
+			job_board.visible = true
+		if background:
+			background.color = Color(0.1, 0.1, 0.12, 0.85)
+		if connection_dot:
+			connection_dot.visible = true
+		if connection_label:
+			connection_label.visible = true
+		if speed_slider:
+			speed_slider.visible = true
+		if speed_label:
+			speed_label.visible = true
+		var prefix = $HBoxContainer.get_node_or_null("SpeedPrefixLabel")
+		if prefix:
+			prefix.visible = true
 		if kiosk_button:
 			kiosk_button.text = "KIOSK"
 
@@ -119,12 +147,15 @@ func _update_metrics() -> void:
 		if WorldState.workers[wid].get("activeJobs", 0) > 0:
 			busy_workers += 1
 
+	# Use real Redis queue depth
 	var real_q = WorldState.metrics.get("realQueueDepth", queued)
+	if real_q > queued:
+		queued = real_q
 	var overflow = WorldState.metrics.get("overflowActive", false)
 	var spend = WorldState.metrics.get("dailyVeniceSpend", 0.0)
 
 	var text = "Q:%d  Run:%d  Done:%d  Fail:%d | Workers: %d/%d" % [
-		real_q, processing, completed, failed, busy_workers, workers_online
+		queued, processing, completed, failed, busy_workers, workers_online
 	]
 	if overflow:
 		text += " | OVERFLOW $%.2f" % spend
