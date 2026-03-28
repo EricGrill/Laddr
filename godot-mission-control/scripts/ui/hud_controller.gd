@@ -1,17 +1,22 @@
 extends Control
 ## Top bar HUD showing connection status, live metrics, and kiosk toggle.
 
-@onready var connection_dot: ColorRect = $HBoxContainer/ConnectionDot
-@onready var connection_label: Label = $HBoxContainer/ConnectionLabel
-@onready var metrics_label: Label = $HBoxContainer/MetricsLabel
-@onready var speed_slider: HSlider = $HBoxContainer/SpeedSlider
-@onready var speed_label: Label = $HBoxContainer/SpeedLabel
-@onready var kiosk_button: Button = $HBoxContainer/KioskButton
+@onready var connection_dot: ColorRect = $VBoxContainer/HBoxContainer/ConnectionDot
+@onready var connection_label: Label = $VBoxContainer/HBoxContainer/ConnectionLabel
+@onready var metrics_label: Label = $VBoxContainer/HBoxContainer/MetricsLabel
+@onready var speed_slider: HSlider = $VBoxContainer/HBoxContainer/SpeedSlider
+@onready var speed_label: Label = $VBoxContainer/HBoxContainer/SpeedLabel
+@onready var kiosk_button: Button = $VBoxContainer/HBoxContainer/KioskButton
 @onready var background: ColorRect = $Background
+
+# Throughput display
+@onready var metrics_label_2: Label = $VBoxContainer/HBoxContainer2/MetricsLabel2
+@onready var throughput_tracker: ThroughputTracker = $ThroughputTracker
 
 # Speed values mapped to slider steps 0..3
 const SPEED_VALUES = [0.5, 1.0, 2.0, 4.0]
 
+var _capacity_pulse_active: bool = false
 var _kiosk_mode: bool = false
 var _status_tween: Tween = null
 var _background_tween: Tween = null
@@ -80,7 +85,7 @@ func _toggle_kiosk() -> void:
 			speed_slider.visible = false
 		if speed_label:
 			speed_label.visible = false
-		var prefix = $HBoxContainer.get_node_or_null("SpeedPrefixLabel")
+		var prefix = $VBoxContainer/HBoxContainer.get_node_or_null("SpeedPrefixLabel")
 		if prefix:
 			prefix.visible = false
 		if kiosk_button:
@@ -103,7 +108,7 @@ func _toggle_kiosk() -> void:
 			speed_slider.visible = true
 		if speed_label:
 			speed_label.visible = true
-		var prefix = $HBoxContainer.get_node_or_null("SpeedPrefixLabel")
+		var prefix = $VBoxContainer/HBoxContainer.get_node_or_null("SpeedPrefixLabel")
 		if prefix:
 			prefix.visible = true
 		if kiosk_button:
@@ -174,12 +179,45 @@ func _update_metrics() -> void:
 		text += " | OVERFLOW $%.2f" % spend
 	metrics_label.text = text
 
+	# Throughput line
+	var in_5m := throughput_tracker.get_5m_inbound()
+	var in_1h := throughput_tracker.get_1h_inbound()
+	var in_24h := throughput_tracker.get_24h_inbound()
+	var out_5m := throughput_tracker.get_5m_completed()
+	var out_1h := throughput_tracker.get_1h_completed()
+	var out_24h := throughput_tracker.get_24h_completed()
+	var sat := throughput_tracker.get_saturation()
+	var cap_status := throughput_tracker.get_capacity_status()
+
+	var throughput_text := "In: %d/5m  %d/hr  %d/day   Out: %d/5m  %d/hr  %d/day   Sat: %d%%  ● %s" % [
+		in_5m, in_1h, in_24h, out_5m, out_1h, out_24h, int(sat * 100), cap_status.to_upper()
+	]
+	metrics_label_2.text = throughput_text
+
+	# Saturation color
+	var sat_pct := sat * 100.0
+	if sat_pct > 80.0:
+		metrics_label_2.modulate = Color.GREEN
+	elif sat_pct > 50.0:
+		metrics_label_2.modulate = Color.YELLOW
+	else:
+		metrics_label_2.modulate = Color.RED
+
+	_capacity_pulse_active = cap_status != "healthy"
+
 
 func _process(delta: float) -> void:
 	_hud_time += delta
 	if connection_dot and connection_dot.visible:
 		var pulse = 1.0 + sin(_hud_time * 3.5) * 0.035
 		connection_dot.scale = Vector2(pulse, pulse)
+
+	# Capacity status pulse on throughput line
+	if _capacity_pulse_active:
+		var alpha := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 500.0)
+		metrics_label_2.modulate.a = alpha
+	else:
+		metrics_label_2.modulate.a = 1.0
 
 
 func _animate_status_dot(state: String) -> void:
