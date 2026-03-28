@@ -225,7 +225,7 @@ class AgentRunner:
                         role="Assistant",
                         goal="Answer the user's request",
                     )
-                    from laddr.core.agent import Agent
+                    from laddr.core.agent_runtime import Agent
                     agent = Agent(agent_config, self.env_config)
             # Ensure bus registration
             # Ensure the agent instance uses this runner's env_config and backends.
