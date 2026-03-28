@@ -60,7 +60,13 @@ class Dispatcher:
         return select_best_worker(alive, requirements)
 
     async def _load_workers_from_redis(self) -> list[dict[str, Any]]:
-        """Load worker registrations from Redis into memory and return alive workers."""
+        """Load worker registrations from Redis into memory and return alive workers.
+
+        Uses the dispatcher's own active counters (laddr:workers:active:{wid})
+        rather than the worker heartbeat's active_jobs, since the heartbeat
+        only reflects jobs the worker has actually started processing — not
+        jobs queued in its stream waiting to be picked up.
+        """
         if self.redis is None:
             return self.worker_registry.list_alive()
         try:
@@ -71,8 +77,6 @@ class Dispatcher:
                 w = json.loads(data)
                 # Consider alive if heartbeat within 120s
                 if now - w.get("last_heartbeat", 0) < 120:
-                    # Normalize: ensure capabilities dict exists
-                    # Workers may store models/mcps/skills at top level or under capabilities
                     if "capabilities" not in w:
                         w["capabilities"] = {
                             "models": w.get("models", []),
@@ -80,8 +84,16 @@ class Dispatcher:
                             "skills": w.get("skills", []),
                             "max_concurrent": w.get("max_concurrent", 1),
                         }
-                    if "active_jobs" not in w:
-                        w["active_jobs"] = 0
+                    # Read the dispatcher's active counter — this reflects
+                    # jobs dispatched but not yet completed, which is the
+                    # correct backpressure signal.
+                    wid = w.get("worker_id", "")
+                    active_key = f"laddr:workers:active:{wid}"
+                    try:
+                        dispatched_active = await self.redis.get(active_key)
+                        w["active_jobs"] = int(dispatched_active or 0)
+                    except Exception:
+                        w["active_jobs"] = w.get("active_jobs", 0)
                     workers.append(w)
             return workers
         except Exception as exc:

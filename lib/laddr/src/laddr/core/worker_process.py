@@ -445,8 +445,18 @@ class WorkerProcess:
             logger.info("Job %s (%s) completed", job_id, task_type)
         finally:
             self._active_jobs -= 1
-            counter_key = f"laddr:active:{self.worker_id}"
-            await self._redis.decr(counter_key)
+            # Decrement both keys for compatibility with dispatcher backpressure
+            for counter_key in (
+                f"laddr:active:{self.worker_id}",
+                f"laddr:workers:active:{self.worker_id}",
+            ):
+                try:
+                    val = await self._redis.decr(counter_key)
+                    # Don't let counter go negative
+                    if val < 0:
+                        await self._redis.set(counter_key, 0)
+                except Exception:
+                    pass
 
     async def _execute_llm_job(self, job: dict) -> dict | None:
         """Execute a task_type='llm' job by building an ephemeral agent.
