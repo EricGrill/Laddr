@@ -38,9 +38,11 @@ const FIXED_POSITIONS = {
 	"output-dock": Vector2(17, 7),
 }
 
-# Dynamic worker stations fill a row
-const DYNAMIC_START = Vector2(7, 12)
-const DYNAMIC_SPACING = Vector2(5, 0)
+# Dynamic worker stations — 2-column grid, tighter spacing
+const DYNAMIC_START = Vector2(6, 10)
+const DYNAMIC_COLS = 3
+const DYNAMIC_COL_SPACING = 3.5
+const DYNAMIC_ROW_SPACING = 3
 
 
 func _ready() -> void:
@@ -246,7 +248,9 @@ func _build_from_snapshot() -> void:
 		if FIXED_POSITIONS.has(station_id):
 			grid_pos = FIXED_POSITIONS[station_id]
 		else:
-			grid_pos = DYNAMIC_START + DYNAMIC_SPACING * dynamic_index
+			var col = dynamic_index % DYNAMIC_COLS
+			var row = dynamic_index / DYNAMIC_COLS
+			grid_pos = DYNAMIC_START + Vector2(col * DYNAMIC_COL_SPACING, row * DYNAMIC_ROW_SPACING)
 			dynamic_index += 1
 
 		var screen_pos = iso.grid_to_screen(grid_pos)

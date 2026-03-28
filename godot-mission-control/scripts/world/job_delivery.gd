@@ -13,15 +13,15 @@ var _last_job_count: int = 0
 const MAX_VISIBLE_BRICKS = 12
 const BRICK_WIDTH = 60
 const BRICK_HEIGHT = 16
-const SHIP_SCALE = Vector2(0.35, 0.35)
-const SHIP_SPEED = 300.0
+const SHIP_SCALE = Vector2(0.8, 0.8)
+const SHIP_SPEED = 120.0
 
-# Spawn positions (off-screen directions)
+# Spawn positions (far off-screen for dramatic approach)
 const SPAWN_OFFSETS = [
-	Vector2(-600, -200),  # top-left
-	Vector2(600, -300),   # top-right
-	Vector2(-500, 200),   # left
-	Vector2(0, -500),     # top
+	Vector2(-800, -300),  # top-left
+	Vector2(800, -400),   # top-right
+	Vector2(-700, 300),   # left
+	Vector2(0, -700),     # top
 ]
 
 const BRICK_COLORS = [
@@ -145,7 +145,7 @@ func _update_ship(data: Dictionary, delta: float) -> void:
 			# Arrived?
 			if ship.position.distance_to(data["target"]) < 15:
 				data["phase"] = "dropping"
-				data["timer"] = 0.4
+				data["timer"] = 1.2
 				# Drop the brick
 				_add_brick(data["title"], true)
 
@@ -159,8 +159,8 @@ func _update_ship(data: Dictionary, delta: float) -> void:
 				data["exit_dir"] = Vector2(randf_range(-1, 1), -1).normalized()
 
 		"leaving":
-			ship.position += data["exit_dir"] * SHIP_SPEED * 1.5 * delta
-			ship.modulate.a -= delta * 1.5
+			ship.position += data["exit_dir"] * SHIP_SPEED * 1.2 * delta
+			ship.modulate.a -= delta * 0.6
 			if ship.modulate.a <= 0:
 				ship.queue_free()
 				_active_ships.erase(data)
