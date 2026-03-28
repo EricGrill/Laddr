@@ -301,6 +301,14 @@ class Dispatcher:
 
             try:
                 await self.redis.xadd(target_stream, {"job": json.dumps(job)})
+                # ACK the original pending stream message
+                orig_stream = entry.get("stream")
+                orig_msg_id = entry.get("msg_id")
+                if orig_stream and orig_msg_id:
+                    try:
+                        await self.redis.xack(orig_stream, DISPATCHER_GROUP, orig_msg_id)
+                    except Exception:
+                        pass
                 logger.info("Dispatched waiting job to worker %s", worker_id)
             except Exception as exc:
                 logger.error("Failed to dispatch waiting job: %s", exc)
