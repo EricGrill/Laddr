@@ -331,6 +331,15 @@ async def _build_snapshot(deps: dict) -> dict:
             except Exception:
                 w["completedLastHour"] = 0
 
+        # Set status based on actual activity
+        for w in workers:
+            if w["activeJobs"] > 0 or w.get("streamPending", 0) > 0:
+                w["status"] = "busy"
+            elif w.get("completedLastHour", 0) > 0:
+                w["status"] = "working"
+            else:
+                w["status"] = "online"
+
     dynamic_stations = [_build_station_from_worker(w) for w in raw_workers]
     stations = _fixed_stations() + dynamic_stations
 
