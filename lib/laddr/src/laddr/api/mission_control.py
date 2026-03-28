@@ -345,7 +345,7 @@ async def _build_snapshot(deps: dict) -> dict:
     jobs = []
     if database:
         try:
-            recent = database.list_prompts(limit=100)
+            recent = database.list_prompts(limit=25)
             worker_lookup: dict[str, dict] = {}
             for worker in raw_workers:
                 worker_lookup[worker["worker_id"]] = worker
@@ -376,13 +376,13 @@ async def _build_snapshot(deps: dict) -> dict:
                     if station["type"] == station_suffix:
                         station_id = station["id"]
                         break
-                summary = pe.get("prompt_name", "unknown")
+                summary = pe.get("prompt_name", "unknown")[:80]
                 current_step = _status_to_step(status)
                 history = _build_job_history(pe, station_id, work_type)
                 progress = _progress_from_status(status)
                 jobs.append({
                     "id": pe.get("prompt_id", ""),
-                    "type": pe.get("prompt_name", "unknown"),
+                    "type": pe.get("prompt_name", "unknown")[:80],
                     "priority": "normal",
                     "state": state_map.get(status, "queued"),
                     "assignedAgentId": worker_hint.get("worker_id") if status == "running" and worker_hint else None,
