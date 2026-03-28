@@ -53,8 +53,7 @@ func _ready() -> void:
 	_camera = get_parent().get_node_or_null("Camera")
 
 	_draw_floor_grid()
-	_build_ambient_layer()
-	_spawn_decorations()
+	_build_rooms_and_paths()
 	_setup_job_delivery()
 
 	WorldState.snapshot_loaded.connect(_on_snapshot_loaded)
@@ -112,42 +111,62 @@ func _draw_floor_grid() -> void:
 				_floor_node.add_child(tile)
 
 
-func _build_ambient_layer() -> void:
-	if _ambient_root:
-		_ambient_root.queue_free()
-	_ambient_root = Node2D.new()
-	_ambient_root.name = "AmbientLayer"
-	_ambient_root.z_index = -4
-	add_child(_ambient_root)
-	_ambient_orbits.clear()
+func _build_rooms_and_paths() -> void:
+	# Build room enclosures around stations and glowing paths between them
+	var rooms_layer = Node2D.new()
+	rooms_layer.name = "RoomsLayer"
+	rooms_layer.z_index = -3
+	add_child(rooms_layer)
 
-	if not _floor_light_tex:
-		return
+	# Room textures
+	var room_large_tex = load("res://assets/sprites/rooms/room_large.png")
+	var room_small_tex = load("res://assets/sprites/rooms/room_small.png")
 
-	var anchors = [
-		{"center": iso.grid_to_screen(Vector2(10, 7)), "radius": Vector2(170, 60), "speed": 0.16, "phase": 0.0, "scale": 1.75, "color": Color(0.25, 0.9, 1.0, 0.10)},
-		{"center": iso.grid_to_screen(Vector2(8, 7)), "radius": Vector2(96, 34), "speed": 0.28, "phase": 1.3, "scale": 1.2, "color": Color(0.35, 0.8, 1.0, 0.08)},
-		{"center": iso.grid_to_screen(Vector2(13, 3)), "radius": Vector2(88, 30), "speed": 0.21, "phase": 2.1, "scale": 1.1, "color": Color(0.55, 0.65, 1.0, 0.08)},
-		{"center": iso.grid_to_screen(Vector2(3, 4)), "radius": Vector2(72, 26), "speed": 0.24, "phase": 2.8, "scale": 1.0, "color": Color(0.55, 1.0, 0.75, 0.07)},
+	# Place rooms around fixed station positions
+	var room_placements = {
+		"intake": {"tex": "large", "offset": Vector2(0, 5)},
+		"dispatcher": {"tex": "large", "offset": Vector2(0, 5)},
+		"supervisor": {"tex": "small", "offset": Vector2(0, 5)},
+		"error-chamber": {"tex": "small", "offset": Vector2(0, 5)},
+		"output-dock": {"tex": "large", "offset": Vector2(0, 5)},
+	}
+
+	for station_id in room_placements:
+		var grid_pos = FIXED_POSITIONS.get(station_id)
+		if not grid_pos:
+			continue
+		var screen_pos = iso.grid_to_screen(grid_pos)
+		var room_info = room_placements[station_id]
+		var tex = room_large_tex if room_info["tex"] == "large" else room_small_tex
+		if tex:
+			var sprite = Sprite2D.new()
+			sprite.texture = tex
+			sprite.position = screen_pos + room_info["offset"]
+			sprite.scale = Vector2(0.7, 0.7)
+			sprite.modulate = Color(1, 1, 1, 0.6)
+			rooms_layer.add_child(sprite)
+
+	# Draw glowing path lines between connected stations
+	var path_connections = [
+		["intake", "dispatcher"],
+		["dispatcher", "supervisor"],
+		["dispatcher", "output-dock"],
+		["dispatcher", "error-chamber"],
 	]
 
-	for anchor in anchors:
-		var sprite = Sprite2D.new()
-		sprite.texture = _floor_light_tex
-		sprite.centered = true
-		sprite.scale = Vector2.ONE * float(anchor["scale"])
-		sprite.modulate = anchor["color"]
-		_ambient_root.add_child(sprite)
-		_ambient_orbits.append({
-			"node": sprite,
-			"center": anchor["center"],
-			"radius": anchor["radius"],
-			"speed": anchor["speed"],
-			"phase": anchor["phase"],
-			"base_color": anchor["color"],
-			"base_scale": float(anchor["scale"]),
-			"spin": randf_range(-0.2, 0.2),
-		})
+	for conn in path_connections:
+		var from_grid = FIXED_POSITIONS.get(conn[0])
+		var to_grid = FIXED_POSITIONS.get(conn[1])
+		if not from_grid or not to_grid:
+			continue
+		var from_pos = iso.grid_to_screen(from_grid)
+		var to_pos = iso.grid_to_screen(to_grid)
+		_draw_path_line(rooms_layer, from_pos, to_pos)
+
+	# Path from dispatcher down to worker area
+	var dispatcher_pos = iso.grid_to_screen(FIXED_POSITIONS["dispatcher"])
+	var worker_area_pos = iso.grid_to_screen(DYNAMIC_START + Vector2(DYNAMIC_COL_SPACING, 0))
+	_draw_path_line(rooms_layer, dispatcher_pos, worker_area_pos)
 
 
 func _react_to_event(zoom_delta: float, shake_strength: float, duration: float, emphasis: float) -> void:
@@ -159,7 +178,6 @@ func _react_to_event(zoom_delta: float, shake_strength: float, duration: float, 
 func _process(delta: float) -> void:
 	_ambient_time += delta
 	_world_emphasis = maxf(0.0, _world_emphasis - delta * 0.45)
-	_update_ambient_layer()
 
 
 func _update_ambient_layer() -> void:
@@ -398,27 +416,30 @@ func _distribute_jobs() -> void:
 			WorldState.station_changed.emit(sid)
 
 
-func _spawn_decorations() -> void:
-	# Place decorative props around the map in empty spaces
-	var decor_items = [
-		{"file": "hologram_globe", "pos": Vector2(1, 6), "scale": 0.3},
-		{"file": "server_rack", "pos": Vector2(18, 3), "scale": 0.3},
-		{"file": "coffee_station", "pos": Vector2(13, 11), "scale": 0.28},
-		{"file": "antenna_dish", "pos": Vector2(5, 1), "scale": 0.3},
-		{"file": "server_rack", "pos": Vector2(16, 12), "scale": 0.25},
-		{"file": "hologram_globe", "pos": Vector2(12, 1), "scale": 0.25},
-	]
-	for item in decor_items:
-		var tex = load("res://assets/sprites/decor/%s.png" % item["file"])
-		if not tex:
-			continue
-		var sprite = Sprite2D.new()
-		sprite.texture = tex
-		sprite.scale = Vector2(item["scale"], item["scale"])
-		sprite.position = iso.grid_to_screen(item["pos"])
-		sprite.z_index = 2
-		sprite.modulate = Color(1, 1, 1, 0.85)
-		add_child(sprite)
+func _draw_path_line(parent: Node2D, from: Vector2, to: Vector2) -> void:
+	# Draw a glowing path between two points using segments
+	var dir = (to - from)
+	var length = dir.length()
+	var step = 8.0
+	var steps = int(length / step)
+	var norm = dir.normalized()
+
+	for i in range(steps):
+		var pos = from + norm * step * i
+		var dot = ColorRect.new()
+		dot.size = Vector2(4, 2)
+		dot.position = pos - dot.size / 2
+		dot.color = Color(0.2, 0.7, 0.9, 0.25)
+		parent.add_child(dot)
+
+	# Brighter dots at intervals
+	for i in range(0, steps, 4):
+		var pos = from + norm * step * i
+		var glow = ColorRect.new()
+		glow.size = Vector2(6, 3)
+		glow.position = pos - glow.size / 2
+		glow.color = Color(0.3, 0.85, 1.0, 0.4)
+		parent.add_child(glow)
 
 
 func _setup_job_delivery() -> void:
