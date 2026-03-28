@@ -169,6 +169,19 @@ async def _build_snapshot(deps: dict) -> dict:
             logger.debug("Could not read workers from Redis")
 
     workers = [_build_worker(w) for w in raw_workers]
+
+    # Enrich workers with stream pending count (true activity indicator)
+    if redis_client:
+        for w in workers:
+            wid = w["id"]
+            try:
+                stream_len = await redis_client.xlen(f"laddr:worker:{wid}")
+                w["streamPending"] = stream_len
+                # If heartbeat says 0 active but stream has jobs, worker IS busy
+                if w["activeJobs"] == 0 and stream_len > 0:
+                    w["activeJobs"] = stream_len
+            except Exception:
+                w["streamPending"] = 0
     dynamic_stations = [_build_station_from_worker(w) for w in raw_workers]
     stations = _fixed_stations() + dynamic_stations
 
