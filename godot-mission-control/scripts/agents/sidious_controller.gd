@@ -46,22 +46,22 @@ func _ready() -> void:
 	_status_card.position = Vector2(0, -80)
 
 	var bg = ColorRect.new()
-	bg.size = Vector2(160, 50)
-	bg.position = Vector2(-80, -30)
-	bg.color = Color(0.15, 0.05, 0.2, 0.92)
+	bg.size = Vector2(200, 80)
+	bg.position = Vector2(-100, -45)
+	bg.color = Color(0.12, 0.04, 0.18, 0.92)
 	_status_card.add_child(bg)
 
 	var border = ColorRect.new()
-	border.size = Vector2(160, 2)
-	border.position = Vector2(-80, -30)
+	border.size = Vector2(200, 2)
+	border.position = Vector2(-100, -45)
 	border.color = Color(0.6, 0.2, 0.9, 0.9)
 	_status_card.add_child(border)
 
 	_status_text = Label.new()
-	_status_text.position = Vector2(-74, -26)
-	_status_text.size = Vector2(148, 44)
+	_status_text.position = Vector2(-94, -40)
+	_status_text.size = Vector2(188, 72)
 	var st_settings = LabelSettings.new()
-	st_settings.font_size = 11
+	st_settings.font_size = 12
 	st_settings.font_color = Color(0.9, 0.7, 1.0, 1.0)
 	_status_text.label_settings = st_settings
 	_status_text.autowrap_mode = TextServer.AUTOWRAP_WORD
@@ -93,7 +93,26 @@ func _check_overflow() -> void:
 		_go_to_sleep()
 
 	if _is_awake:
-		_status_text.text = "OVERFLOW ACTIVE\nQueue: %d\nVenice: $%.2f/$%.0f" % [queue, spend, budget]
+		# Find a processing job to show what Venice is working on
+		var job_title = ""
+		var processing_count = 0
+		for jid in WorldState.jobs:
+			var job = WorldState.jobs[jid]
+			if job.get("state", "") == "processing":
+				processing_count += 1
+				if job_title == "":
+					var raw = str(job.get("type", ""))
+					for line in raw.split("\n"):
+						var t = line.strip_edges()
+						if t.begins_with("# "):
+							job_title = t.substr(2).left(24)
+							break
+		var lines = ["OVERFLOW ACTIVE"]
+		if job_title != "":
+			lines.append(job_title)
+		lines.append("Q:%d | Run:%d" % [queue, processing_count])
+		lines.append("Venice: $%.2f / $%.0f" % [spend, budget])
+		_status_text.text = "\n".join(lines)
 
 
 func _wake_up() -> void:

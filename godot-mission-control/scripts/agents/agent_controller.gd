@@ -147,8 +147,18 @@ func _update_status_card() -> void:
 
 	if is_busy:
 		status_card.visible = true
+		var lines = []
 
-		# Extract primary model name from capabilities
+		# Find current job title
+		var job_title = ""
+		for jid in WorldState.jobs:
+			var job = WorldState.jobs[jid]
+			if job.get("state", "") == "processing":
+				var raw = str(job.get("type", ""))
+				job_title = _extract_job_title(raw)
+				break
+
+		# Extract model from worker config
 		var model_name = ""
 		for cap in caps:
 			var cap_str = ""
@@ -158,27 +168,28 @@ func _update_status_card() -> void:
 				cap_str = str(cap)
 			var c = cap_str.to_lower()
 			if "embed" in c:
-				continue  # Skip embedding models
-			if "gpt" in c or "claude" in c or "llama" in c or "gemini" in c or "mistral" in c or "qwen" in c or "deepseek" in c:
-				model_name = cap_str.get_file().replace("openai-", "")
-				if model_name.length() > 20:
-					model_name = model_name.left(20)
+				continue
+			if "gpt" in c or "claude" in c or "llama" in c or "gemini" in c or "mistral" in c or "qwen" in c or "deepseek" in c or "gemma" in c or "granite" in c:
+				# Clean up model name
+				model_name = cap_str.replace("openai-", "").replace("openai/", "")
+				# Shorten common prefixes
+				for prefix in ["anthropic/", "google/", "meta/", "mistralai/", "qwen/", "deepseek/", "nvidia/"]:
+					model_name = model_name.replace(prefix, "")
+				if model_name.length() > 22:
+					model_name = model_name.left(22)
 				break
 
-		# Short card: model + job count
+		if job_title != "":
+			lines.append(job_title)
 		if model_name != "":
-			status_text.text = "%s\n%d job%s" % [model_name, active, "s" if active != 1 else ""]
-		else:
-			status_text.text = "%d job%s" % [active, "s" if active != 1 else ""]
+			lines.append(model_name)
+		lines.append("%d active" % active)
 
-		var card_pulse = 1.0 + sin(Time.get_ticks_msec() / 1000.0 * 2.0) * 0.015
-		status_card.position.y = -75 + sin(Time.get_ticks_msec() / 1000.0 * 1.5) * 3.0
-		status_card.scale = Vector2.ONE * card_pulse
+		status_text.text = "\n".join(lines)
+		status_card.position.y = -75 + sin(Time.get_ticks_msec() / 1000.0 * 1.5) * 2.0
 	else:
 		if status_card.visible and current_state == State.IDLE:
 			status_card.visible = false
-		else:
-			status_card.scale = Vector2.ONE
 
 
 func _simulate_activity() -> void:
@@ -467,6 +478,22 @@ func _is_my_agent(agent_id: String) -> bool:
 	var agent_data = WorldState.agents.get(agent_id, {})
 	var agent_worker = agent_data.get("workerId", agent_id)
 	return agent_worker == worker_id or agent_id == worker_id
+
+
+func _extract_job_title(raw: String) -> String:
+	# Extract a readable title from job type/system prompt
+	var lines = raw.split("\n")
+	for line in lines:
+		var trimmed = line.strip_edges()
+		if trimmed.begins_with("# "):
+			return trimmed.substr(2).left(28)
+		if trimmed.begins_with("## "):
+			return trimmed.substr(3).left(28)
+	for line in lines:
+		var trimmed = line.strip_edges()
+		if trimmed != "" and trimmed.length() > 3:
+			return trimmed.left(28)
+	return ""
 
 
 func _on_click_area_input(_viewport: Node, event: InputEvent, _shape_idx: int) -> void:
