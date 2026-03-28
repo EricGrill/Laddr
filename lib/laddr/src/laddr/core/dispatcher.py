@@ -327,36 +327,19 @@ class Dispatcher:
         self._running = True
         await self._ensure_consumer_groups()
 
-        # Reclaim any unacked messages from previous run
-        reclaimed = await self._reclaim_unacked()
-        for stream, msg_id, fields in reclaimed:
-            raw = fields.get("job", fields.get(b"job", "{}"))
-            if isinstance(raw, bytes):
-                raw = raw.decode()
-            job = json.loads(raw)
-            dispatched = await self._dispatch_job(job, stream, msg_id)
-            if not dispatched:
-                self._waiting.append({"job": job, "stream": stream, "msg_id": msg_id})
-                logger.info("Reclaimed job queued to waiting list")
-
         # Build stream dict for XREADGROUP
         streams = {priority_stream_key(p): ">" for p in PRIORITY_LEVELS}
 
         # Counter sync timer — every 30s, reconcile active counters
-        # with actual worker heartbeat data to prevent counter drift
         counter_sync_interval = 30.0
         counter_sync_timer = counter_sync_interval
 
         while self._running:
             # Periodic counter reconciliation
-            counter_sync_timer -= 1.0  # ~1s per loop iteration (block=1000ms)
+            counter_sync_timer -= 0.2  # ~200ms per loop iteration
             if counter_sync_timer <= 0:
                 counter_sync_timer = counter_sync_interval
                 await self._sync_active_counters()
-
-            # Check waiting queue first each iteration
-            if self._waiting:
-                await self._process_waiting()
 
             try:
                 result = await self.redis.xreadgroup(
@@ -364,10 +347,15 @@ class Dispatcher:
                     consumername=DISPATCHER_CONSUMER,
                     streams=streams,
                     count=50,
-                    block=200,  # 200ms block for faster dispatch cycling
+                    block=200,
                 )
             except Exception as exc:
-                logger.error("XREADGROUP error: %s", exc)
+                err_msg = str(exc)
+                if "NOGROUP" in err_msg:
+                    await self._ensure_consumer_groups()
+                else:
+                    logger.error("XREADGROUP error: %s", exc)
+                await asyncio.sleep(0.5)
                 continue
 
             if not result:
@@ -388,20 +376,21 @@ class Dispatcher:
                         dispatched = await self._dispatch_job(job, stream_name, msg_id)
                     except Exception as exc:
                         logger.error("Failed to dispatch job %s: %s", msg_id, exc)
-                        # ACK the poison message so it doesn't block the queue
+                        dispatched = False
+
+                    if not dispatched:
+                        # No worker available — ACK to avoid stuck unacked messages,
+                        # re-add to the stream so it gets picked up next cycle
                         try:
                             await self.redis.xack(stream_name, DISPATCHER_GROUP, msg_id)
+                            await self.redis.xadd(stream_name, {"job": json.dumps(job)})
                         except Exception:
                             pass
-                        continue
-                    if not dispatched:
-                        # TODO: persist waiting list to Redis for crash recovery
-                        self._waiting.append({
-                            "job": job,
-                            "stream": stream_name,
-                            "msg_id": msg_id,
-                        })
-                        logger.info("No worker available — job added to waiting list")
+                        # Brief pause when no workers available
+                        await asyncio.sleep(1)
+                    else:
+                        # Successfully dispatched — already ACKed in _dispatch_job
+                        pass
 
     async def _sync_active_counters(self) -> None:
         """Reconcile dispatcher active counters with reality.
