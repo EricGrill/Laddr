@@ -1,14 +1,17 @@
 extends Control
-## Top bar HUD showing connection status and live metrics.
+## Top bar HUD showing connection status, live metrics, and kiosk toggle.
 
 @onready var connection_dot: ColorRect = $HBoxContainer/ConnectionDot
 @onready var connection_label: Label = $HBoxContainer/ConnectionLabel
 @onready var metrics_label: Label = $HBoxContainer/MetricsLabel
 @onready var speed_slider: HSlider = $HBoxContainer/SpeedSlider
 @onready var speed_label: Label = $HBoxContainer/SpeedLabel
+@onready var kiosk_button: Button = $HBoxContainer/KioskButton
 
 # Speed values mapped to slider steps 0..3
 const SPEED_VALUES = [0.5, 1.0, 2.0, 4.0]
+
+var _kiosk_mode: bool = false
 
 
 func _ready() -> void:
@@ -21,11 +24,50 @@ func _ready() -> void:
 		speed_slider.min_value = 0
 		speed_slider.max_value = 3
 		speed_slider.step = 1
-		speed_slider.value = 1  # Default 1.0x
+		speed_slider.value = 1
 		speed_slider.value_changed.connect(_on_speed_slider_changed)
 
 	if speed_label:
 		speed_label.text = "1.0x"
+
+	if kiosk_button:
+		kiosk_button.pressed.connect(_toggle_kiosk)
+		# Style the button
+		kiosk_button.add_theme_color_override("font_color", Color(0.5, 0.85, 0.95, 0.9))
+		kiosk_button.add_theme_color_override("font_hover_color", Color(0.7, 0.95, 1.0, 1.0))
+
+
+func _toggle_kiosk() -> void:
+	_kiosk_mode = not _kiosk_mode
+
+	# Find sibling UI nodes in the UILayer
+	var ui_layer = get_parent()
+	if not ui_layer:
+		return
+
+	var inspector = ui_layer.get_node_or_null("Inspector")
+	var mission_panel = ui_layer.get_node_or_null("MissionPanel")
+	var job_board = ui_layer.get_node_or_null("JobBoard")
+
+	if _kiosk_mode:
+		# Hide side panels, keep HUD minimal and job board
+		if inspector:
+			inspector.visible = false
+		if mission_panel:
+			mission_panel.visible = false
+		# Shrink HUD to just metrics bar
+		offset_bottom = 28.0
+		if kiosk_button:
+			kiosk_button.text = "EXIT"
+	else:
+		# Restore all panels
+		if inspector:
+			inspector.visible = true
+		if mission_panel:
+			mission_panel.visible = true
+		offset_bottom = 40.0
+		if kiosk_button:
+			kiosk_button.text = "KIOSK"
 
 
 func _on_speed_slider_changed(value: float) -> void:
@@ -76,6 +118,14 @@ func _update_metrics() -> void:
 	for wid in WorldState.workers:
 		if WorldState.workers[wid].get("activeJobs", 0) > 0:
 			busy_workers += 1
-	metrics_label.text = "Q:%d  Run:%d  Done:%d  Fail:%d | Workers: %d/%d" % [
-		queued, processing, completed, failed, busy_workers, workers_online
+
+	var real_q = WorldState.metrics.get("realQueueDepth", queued)
+	var overflow = WorldState.metrics.get("overflowActive", false)
+	var spend = WorldState.metrics.get("dailyVeniceSpend", 0.0)
+
+	var text = "Q:%d  Run:%d  Done:%d  Fail:%d | Workers: %d/%d" % [
+		real_q, processing, completed, failed, busy_workers, workers_online
 	]
+	if overflow:
+		text += " | OVERFLOW $%.2f" % spend
+	metrics_label.text = text
