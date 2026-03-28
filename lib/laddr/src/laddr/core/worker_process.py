@@ -283,7 +283,18 @@ class WorkerProcess:
                         block=2000,
                     )
                 except Exception as exc:
-                    logger.error("XREADGROUP error: %s", exc)
+                    err_msg = str(exc)
+                    if "NOGROUP" in err_msg:
+                        # Stream or group was deleted (e.g. by flush) — recreate
+                        logger.warning("Stream/group deleted, recreating %s", stream_key)
+                        try:
+                            await self._redis.xgroup_create(
+                                stream_key, group_name, id="0", mkstream=True,
+                            )
+                        except Exception:
+                            pass
+                    else:
+                        logger.error("XREADGROUP error: %s", exc)
                     await asyncio.sleep(1)
                     continue
 
