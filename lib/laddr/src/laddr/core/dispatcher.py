@@ -277,11 +277,7 @@ class Dispatcher:
             logger.error("XADD to %s failed: %s", target_stream, exc)
             return False
 
-        # ACK the message from the pending stream
-        try:
-            await self.redis.xack(stream, DISPATCHER_GROUP, msg_id)
-        except Exception as exc:
-            logger.warning("XACK failed on %s/%s: %s", stream, msg_id, exc)
+        # Message will be XDEL'd by the caller after successful dispatch
 
         logger.info("Dispatched job to worker %s via %s", worker_id, target_stream)
         return True
@@ -325,36 +321,23 @@ class Dispatcher:
             raise RuntimeError("Dispatcher.run() requires a redis_client")
 
         self._running = True
-        await self._ensure_consumer_groups()
 
-        # Build stream dict for XREADGROUP
-        streams = {priority_stream_key(p): ">" for p in PRIORITY_LEVELS}
-
-        # Counter sync timer — every 30s, reconcile active counters
-        counter_sync_interval = 30.0
-        counter_sync_timer = counter_sync_interval
+        # Track last-read ID per stream (no consumer groups needed)
+        last_ids: dict[str, str] = {
+            priority_stream_key(p): "0-0" for p in PRIORITY_LEVELS
+        }
 
         while self._running:
-            # Periodic counter reconciliation
-            counter_sync_timer -= 0.2  # ~200ms per loop iteration
-            if counter_sync_timer <= 0:
-                counter_sync_timer = counter_sync_interval
-                await self._sync_active_counters()
-
+            # Read new messages from all priority streams
+            streams = {k: v for k, v in last_ids.items()}
             try:
-                result = await self.redis.xreadgroup(
-                    groupname=DISPATCHER_GROUP,
-                    consumername=DISPATCHER_CONSUMER,
+                result = await self.redis.xread(
                     streams=streams,
                     count=50,
                     block=200,
                 )
             except Exception as exc:
-                err_msg = str(exc)
-                if "NOGROUP" in err_msg:
-                    await self._ensure_consumer_groups()
-                else:
-                    logger.error("XREADGROUP error: %s", exc)
+                logger.error("XREAD error: %s", exc)
                 await asyncio.sleep(0.5)
                 continue
 
@@ -367,6 +350,9 @@ class Dispatcher:
                 for msg_id, fields in messages:
                     if isinstance(msg_id, bytes):
                         msg_id = msg_id.decode()
+                    # Always advance cursor so we don't re-read this message
+                    last_ids[stream_name] = msg_id
+
                     raw = fields.get("job", fields.get(b"job", "{}"))
                     if isinstance(raw, bytes):
                         raw = raw.decode()
@@ -378,19 +364,15 @@ class Dispatcher:
                         logger.error("Failed to dispatch job %s: %s", msg_id, exc)
                         dispatched = False
 
-                    if not dispatched:
-                        # No worker available — ACK to avoid stuck unacked messages,
-                        # re-add to the stream so it gets picked up next cycle
+                    if dispatched:
+                        # Remove from stream after successful dispatch
                         try:
-                            await self.redis.xack(stream_name, DISPATCHER_GROUP, msg_id)
-                            await self.redis.xadd(stream_name, {"job": json.dumps(job)})
+                            await self.redis.xdel(stream_name, msg_id)
                         except Exception:
                             pass
-                        # Brief pause when no workers available
-                        await asyncio.sleep(1)
-                    else:
-                        # Successfully dispatched — already ACKed in _dispatch_job
-                        pass
+                    # If not dispatched, message stays in stream.
+                    # We've advanced past it, but on next restart
+                    # we reset to "0-0" so it gets retried.
 
     async def _sync_active_counters(self) -> None:
         """Reconcile dispatcher active counters with reality.
