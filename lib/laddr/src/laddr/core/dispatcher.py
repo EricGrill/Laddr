@@ -243,11 +243,13 @@ class Dispatcher:
                 # Tag the job so workers know to use Venice
                 job.setdefault("routing", {})["prefer_cloud"] = True
                 job["routing"]["complexity"] = complexity
+                # Rough Venice cost estimate per job
+                # deepseek-v3.2: ~$0.0003/1K input, ~$0.0012/1K output
+                # Typical eval job: ~2K input + ~500 output ≈ $0.0012
                 if complexity == "simple":
-                    # Estimate ~$0.001 per simple job
-                    await self._record_overflow_cost(0.001)
+                    await self._record_overflow_cost(0.0008)
                 else:
-                    await self._record_overflow_cost(0.005)
+                    await self._record_overflow_cost(0.0015)
             else:
                 logger.info(
                     "TRIAGE: queue=%d complexity=%s → budget exhausted, local only",

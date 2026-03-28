@@ -78,9 +78,11 @@ func _ready() -> void:
 
 	WorldState.snapshot_loaded.connect(_on_snapshot)
 	WorldState.job_changed.connect(_on_job_changed)
+	WorldState.metrics_changed.connect(_update_stats)
 
 
 func _on_snapshot() -> void:
+	_jobs_scanned = WorldState.jobs.size()
 	_update_stats()
 
 
@@ -115,11 +117,21 @@ func _update_stats() -> void:
 		elif state == "processing":
 			processing += 1
 
-	var lines = ["Scanned: %d jobs" % _jobs_scanned]
+	# Use real queue depth from metrics (DB caps at 100)
+	var real_q = WorldState.metrics.get("realQueueDepth", queued)
+	if real_q > queued:
+		queued = real_q
+
+	var lines = []
 	if queued > 0:
-		lines.append("Queue: %d (%d fast / %d deep)" % [queued, simple, complex_count])
+		lines.append("SCANNING QUEUE")
+		lines.append("Total: %d jobs" % queued)
+		if simple > 0 or complex_count > 0:
+			lines.append("%d fast / %d deep" % [simple, complex_count])
+		lines.append("Processing: %d" % processing)
 	else:
-		lines.append("Queue clear")
+		lines.append("QUEUE CLEAR")
+		lines.append("Standing by...")
 	_status_text.text = "\n".join(lines)
 
 

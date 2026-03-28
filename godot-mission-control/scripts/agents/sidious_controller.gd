@@ -1,7 +1,7 @@
 extends Node2D
 ## Emperor Sidious — Venice overflow agent.
 ## Sits dormant at Command Deck. Wakes when queue > 100.
-## Visually: sleeping on throne → eyes glow, lightning crackles when active.
+## Shows OVERFLOW ACTIVE, BUDGET EXHAUSTED, or sleeping.
 
 var _sprite: Sprite2D
 var _label: Label
@@ -9,7 +9,6 @@ var _status_card: Node2D
 var _status_text: Label
 var _is_awake: bool = false
 var _lightning_particles: Array = []
-var _lightning_timer: float = 0.0
 var _pulse_time: float = 0.0
 
 const WAKE_THRESHOLD = 100
@@ -17,16 +16,14 @@ const SPRITE_BASE = "res://assets/sprites/workers/sidious/"
 
 
 func _ready() -> void:
-	# Create sprite
 	_sprite = Sprite2D.new()
 	_sprite.scale = Vector2(0.45, 0.45)
 	var tex = load(SPRITE_BASE + "sidious_front.png")
 	if tex:
 		_sprite.texture = tex
-	_sprite.modulate = Color(0.4, 0.4, 0.5, 0.7)  # Dim = sleeping
+	_sprite.modulate = Color(0.4, 0.4, 0.5, 0.7)
 	add_child(_sprite)
 
-	# Name label
 	_label = Label.new()
 	_label.text = "Sidious"
 	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -40,7 +37,7 @@ func _ready() -> void:
 	_label.label_settings = lbl_settings
 	add_child(_label)
 
-	# Status card (hidden until awake)
+	# Status card
 	_status_card = Node2D.new()
 	_status_card.visible = false
 	_status_card.position = Vector2(0, -80)
@@ -73,29 +70,28 @@ func _ready() -> void:
 
 
 func _on_snapshot() -> void:
-	_check_overflow()
-
+	_check_state()
 
 func _on_metrics_changed() -> void:
-	_check_overflow()
+	_check_state()
 
 
-func _check_overflow() -> void:
+func _check_state() -> void:
 	var metrics = WorldState.metrics
 	var queue = metrics.get("realQueueDepth", 0)
-	var overflow = metrics.get("overflowActive", false)
 	var spend = metrics.get("dailyVeniceSpend", 0.0)
 	var budget = metrics.get("dailyVeniceBudget", 5.0)
 
-	if overflow and not _is_awake:
+	var should_wake = queue > WAKE_THRESHOLD
+
+	if should_wake and not _is_awake:
 		_wake_up()
-	elif not overflow and _is_awake:
+	elif not should_wake and _is_awake:
 		_go_to_sleep()
 
 	if _is_awake:
-		# Find a processing job to show what Venice is working on
-		var job_title = ""
 		var processing_count = 0
+		var job_title = ""
 		for jid in WorldState.jobs:
 			var job = WorldState.jobs[jid]
 			if job.get("state", "") == "processing":
@@ -107,24 +103,37 @@ func _check_overflow() -> void:
 						if t.begins_with("# "):
 							job_title = t.substr(2).left(24)
 							break
-		var lines = ["OVERFLOW ACTIVE"]
-		if job_title != "":
-			lines.append(job_title)
+
+		var budget_exhausted = spend >= budget
+		var lines = []
+
+		if budget_exhausted:
+			lines.append("BUDGET EXHAUSTED")
+			lines.append("Local workers only")
+		else:
+			lines.append("OVERFLOW ACTIVE")
+			if job_title != "":
+				lines.append(job_title)
+
 		lines.append("Q:%d | Run:%d" % [queue, processing_count])
-		lines.append("Venice: $%.2f / $%.0f" % [spend, budget])
+		lines.append("Workers: %d online" % WorldState.workers.size())
 		_status_text.text = "\n".join(lines)
+
+		# Change lightning color based on budget state
+		var bolt_color = Color(1.0, 0.3, 0.3, 0.8) if budget_exhausted else Color(0.7, 0.3, 1.0, 0.8)
+		for bolt in _lightning_particles:
+			if is_instance_valid(bolt):
+				bolt.color = bolt_color
 
 
 func _wake_up() -> void:
 	_is_awake = true
 	_status_card.visible = true
-	_label.text = "Sidious [ACTIVE]"
+	_label.text = "Sidious"
 
-	# Dramatic wake: brighten sprite, add purple glow
 	var tween = create_tween()
 	tween.tween_property(_sprite, "modulate", Color(1.0, 0.85, 1.0, 1.0), 0.5)
 
-	# Spawn lightning particles
 	for i in range(4):
 		var bolt = ColorRect.new()
 		bolt.size = Vector2(2, 12)
@@ -142,7 +151,6 @@ func _go_to_sleep() -> void:
 	var tween = create_tween()
 	tween.tween_property(_sprite, "modulate", Color(0.4, 0.4, 0.5, 0.7), 1.0)
 
-	# Remove lightning
 	for bolt in _lightning_particles:
 		if is_instance_valid(bolt):
 			bolt.queue_free()
@@ -151,22 +159,16 @@ func _go_to_sleep() -> void:
 
 func _process(delta: float) -> void:
 	if not _is_awake:
-		# Gentle idle bob
 		_sprite.position.y = sin(Time.get_ticks_msec() / 2000.0) * 1.5
 		return
 
 	_pulse_time += delta
 
-	# Lightning flicker
 	for bolt in _lightning_particles:
 		if is_instance_valid(bolt):
 			bolt.visible = randf() > 0.3
 			bolt.position = Vector2(randf_range(-35, 35), randf_range(-45, -5))
-			bolt.rotation = randf_range(-0.5, 0.5)
 
-	# Sprite energy pulse
 	var pulse = 0.85 + sin(_pulse_time * 3.0) * 0.15
 	_sprite.modulate = Color(pulse, pulse * 0.8, 1.0, 1.0)
-
-	# Status card float
-	_status_card.position.y = -80 + sin(_pulse_time * 1.5) * 3.0
+	_status_card.position.y = -80 + sin(_pulse_time * 1.5) * 2.0
