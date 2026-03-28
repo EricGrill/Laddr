@@ -567,9 +567,48 @@ class WorkerProcess:
             instructions=config["instructions"],
         )
 
-        # Run agent — autonomous_run expects a dict with 'query' key
-        task_dict = {"query": config["instructions"]}
-        result = await agent.autonomous_run(task_dict)
+        # Fast path: if job has max_iterations=1 or no tools needed,
+        # skip the autonomous loop and do a single LLM completion.
+        # This is 3-5x faster for simple eval/scoring jobs.
+        max_iter = job.get("max_iterations", 5)
+        max_tools = job.get("max_tool_calls", 20)
+
+        # Auto-detect simple evals: no tool/MCP/skill requirements + scoring prompt pattern
+        reqs = job.get("requirements", {})
+        if isinstance(reqs, str):
+            try:
+                reqs = json.loads(reqs)
+            except (json.JSONDecodeError, TypeError):
+                reqs = {}
+        has_tool_reqs = bool(reqs.get("mcps") or reqs.get("skills"))
+        prompt_text = (job.get("user_prompt", "") or "").lower()
+        is_eval_pattern = any(kw in prompt_text for kw in [
+            "score:", "verdict:", "evaluate this", "assessment:", "rate this",
+        ])
+        if is_eval_pattern and not has_tool_reqs:
+            max_iter = 1  # Force single-shot for eval jobs
+
+        if max_iter <= 1 or max_tools == 0:
+            # Single-shot completion — no agent loop needed
+            logger.info("Fast path: single-shot completion for job %s", job_id)
+            system_prompt = job.get("system_prompt", "")
+            user_prompt = job.get("user_prompt", "")
+            try:
+                text, usage = await llm.generate_with_usage(
+                    user_prompt, system=system_prompt,
+                )
+            except AttributeError:
+                text = await llm.generate(user_prompt, system=system_prompt)
+                usage = {}
+            result = {
+                "status": "completed",
+                "output": text,
+                "usage": usage,
+            }
+        else:
+            # Full autonomous agent loop
+            task_dict = {"query": config["instructions"]}
+            result = await agent.autonomous_run(task_dict)
 
         logger.info("LLM job %s completed on model %s", job_id, model["id"])
         return result

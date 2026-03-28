@@ -414,11 +414,10 @@ class Dispatcher:
                         logger.info("No worker available — job added to waiting list")
 
     async def _sync_active_counters(self) -> None:
-        """Reconcile dispatcher active counters with worker heartbeat data.
+        """Reconcile dispatcher active counters with reality.
 
-        Workers report their actual active_jobs in heartbeats. If the
-        dispatcher counter is higher (due to crashed jobs that never
-        decremented), reset it to the worker's reported value.
+        True active = heartbeat active_jobs + jobs pending in worker stream.
+        If counter drifted higher, correct it.
         """
         if not self.redis:
             return
@@ -429,20 +428,30 @@ class Dispatcher:
                 wid = w.get("worker_id", "")
                 if not wid:
                     continue
+                # Heartbeat: jobs actively being processed
                 actual_active = w.get("active_jobs", 0)
                 if isinstance(actual_active, str):
                     actual_active = int(actual_active)
+                # Worker stream: jobs dispatched but not yet picked up
+                stream_key = worker_stream_key(wid)
+                try:
+                    stream_len = await self.redis.xlen(stream_key)
+                except Exception:
+                    stream_len = 0
+                # True load = processing + waiting in stream
+                true_load = actual_active + stream_len
+
                 active_key = f"laddr:workers:active:{wid}"
                 try:
                     counter_val = int(await self.redis.get(active_key) or 0)
                 except (ValueError, TypeError):
                     counter_val = 0
-                # If counter is higher than reality, sync it down
-                if counter_val > actual_active:
-                    await self.redis.set(active_key, actual_active)
+                # Only correct if counter drifted above true load
+                if counter_val > true_load:
+                    await self.redis.set(active_key, true_load)
                     logger.info(
-                        "Counter sync: %s was %d, actual %d — corrected",
-                        wid, counter_val, actual_active,
+                        "Counter sync: %s was %d, true load %d (active=%d stream=%d) — corrected",
+                        wid, counter_val, true_load, actual_active, stream_len,
                     )
         except Exception as exc:
             logger.warning("Counter sync failed: %s", exc)
