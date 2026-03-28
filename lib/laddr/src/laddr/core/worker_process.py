@@ -353,7 +353,10 @@ class WorkerProcess:
 
         system_prompt = (job.get("system_prompt") or "").lower()
         user_prompt = (job.get("user_prompt") or "").lower()
-        script_signals = ("execute", "shell", "command", "run script", "bash", "sh -c")
+        # Only match explicit script directives, not incidental mentions
+        # of "execute" or "command" in documentation/instructions
+        script_signals = ("run this script", "execute this script", "run this command",
+                          "shell script", "bash script", "sh -c", "run script:")
 
         if any(s in system_prompt for s in script_signals):
             return "script"

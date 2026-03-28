@@ -214,10 +214,19 @@ class AgentRunner:
                     )
                     agent = AgentClass(agent_config, self.env_config)
                 except Exception as primary_err:
-                    raise ValueError(
-                        f"Could not load agent '{agent_name}'. Ensure 'agents/{agent_name}.py' defines '{agent_name}' Agent instance "
-                        f"or legacy 'agents/{agent_name}/handler.py' defines '{agent_name.capitalize()}Agent'. Root cause: {primary_err}"
+                    # No agent module found — fall back to a bare LLM agent
+                    # so headless workers can still handle prompt jobs.
+                    logger.warning(
+                        "Agent '%s' not found, falling back to bare LLM agent: %s",
+                        agent_name, primary_err,
                     )
+                    agent_config = AgentConfig(
+                        name=agent_name,
+                        role="Assistant",
+                        goal="Answer the user's request",
+                    )
+                    from laddr.core.agent import Agent
+                    agent = Agent(agent_config, self.env_config)
             # Ensure bus registration
             # Ensure the agent instance uses this runner's env_config and backends.
             try:
