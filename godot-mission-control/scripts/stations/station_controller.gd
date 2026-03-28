@@ -74,22 +74,42 @@ func _ready() -> void:
 		if tex:
 			sprite_node.texture = tex
 
-	# Worker stations are bigger — they display info screens
+	# Worker stations get a big info screen panel below the sprite
 	var is_worker_station = station_id.begins_with("station-")
 	if is_worker_station:
 		if sprite_node:
 			sprite_node.scale = Vector2(0.8, 0.8)
+		# Create a visible info panel programmatically (scene InfoLabel is too small)
+		var panel = ColorRect.new()
+		panel.name = "WorkerInfoPanel"
+		panel.size = Vector2(180, 55)
+		panel.position = Vector2(-90, 45)
+		panel.color = Color(0.06, 0.1, 0.15, 0.9)
+		panel.z_index = 5
+		add_child(panel)
+		var border = ColorRect.new()
+		border.size = Vector2(180, 2)
+		border.position = Vector2(-90, 45)
+		border.color = Color(0.2, 0.8, 0.95, 0.7)
+		border.z_index = 5
+		add_child(border)
+		# Replace info_label with a new properly sized one inside the panel
 		if info_label:
-			info_label.size = Vector2(160, 60)
-			info_label.position = Vector2(-80, 30)
-			var info_settings = LabelSettings.new()
-			info_settings.font_size = 11
-			info_settings.font_color = Color(0.3, 0.9, 1.0, 0.95)
-			info_settings.outline_size = 2
-			info_settings.outline_color = Color(0, 0, 0, 0.8)
-			info_label.label_settings = info_settings
-			info_label.autowrap_mode = TextServer.AUTOWRAP_WORD
-			info_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			info_label.queue_free()
+		info_label = Label.new()
+		info_label.name = "WorkerInfoText"
+		info_label.size = Vector2(170, 48)
+		info_label.position = Vector2(-85, 49)
+		info_label.z_index = 6
+		info_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		info_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+		var ws = LabelSettings.new()
+		ws.font_size = 11
+		ws.font_color = Color(0.4, 0.95, 1.0, 1.0)
+		ws.outline_size = 1
+		ws.outline_color = Color(0, 0, 0, 0.6)
+		info_label.label_settings = ws
+		add_child(info_label)
 
 	WorldState.station_changed.connect(_on_station_changed)
 	WorldState.snapshot_loaded.connect(_on_snapshot_loaded)
@@ -108,32 +128,7 @@ func _ready() -> void:
 
 
 func _deferred_init() -> void:
-	# Re-apply setup now that @onready nodes exist
-	if label_node and station_label != "":
-		label_node.text = station_label
-	# Re-apply sprite
-	if sprite_node and station_type != "":
-		var sprite_name = TYPE_TO_SPRITE.get(station_type, station_type)
-		var tex_path = STATION_SPRITE_BASE + sprite_name + ".png"
-		var tex = load(tex_path)
-		if tex:
-			sprite_node.texture = tex
-	# Worker station sizing
-	if station_id.begins_with("station-"):
-		if sprite_node:
-			sprite_node.scale = Vector2(0.8, 0.8)
-		if info_label:
-			info_label.size = Vector2(160, 60)
-			info_label.position = Vector2(-80, 30)
-			var settings = LabelSettings.new()
-			settings.font_size = 11
-			settings.font_color = Color(0.3, 0.9, 1.0, 0.95)
-			settings.outline_size = 2
-			settings.outline_color = Color(0, 0, 0, 0.8)
-			info_label.label_settings = settings
-			info_label.autowrap_mode = TextServer.AUTOWRAP_WORD
-			info_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	# Initial data update
+	# Initial data update after tree is ready
 	var data = WorldState.stations.get(station_id, {})
 	if not data.is_empty():
 		_update_from_data(data)
@@ -185,10 +180,15 @@ func _update_from_data(data: Dictionary) -> void:
 
 	# Worker stations show model + task on their "screen"
 	if info_label:
-		var worker_id_val = data.get("workerId", "")
-		if worker_id_val != null and worker_id_val != "":
+		# workerId can be null, string, or missing
+		var worker_id_val = str(data.get("workerId", ""))
+		if worker_id_val != "" and worker_id_val != "null" and worker_id_val != "<null>":
 			# This is a worker station — show detailed info
 			var worker_data = WorldState.workers.get(worker_id_val, {})
+			# Fallback: try stripping "station-" prefix from our ID
+			if worker_data.is_empty():
+				var fallback_id = station_id.replace("station-", "")
+				worker_data = WorldState.workers.get(fallback_id, {})
 			var active = worker_data.get("activeJobs", 0)
 			var caps = worker_data.get("capabilities", [])
 			var lines = []
