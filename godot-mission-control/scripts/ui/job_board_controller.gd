@@ -256,22 +256,15 @@ func _update_stats_from_counts(processing: int, queued: int, completed: int, fai
 
 
 func _update_stats_from_world() -> void:
+	# Use real metrics instead of counting from capped job snapshot
+	var queued = WorldState.metrics.get("realQueueDepth", 0)
 	var processing = 0
-	var queued = 0
-	var completed = 0
-	var failed = 0
 	for jid in WorldState.jobs:
-		var job = WorldState.jobs[jid]
-		var state = job.get("state", "queued")
-		match state:
-			"processing":
-				processing += 1
-			"queued":
-				queued += 1
-			"completed":
-				completed += 1
-			"failed":
-				failed += 1
+		if WorldState.jobs[jid].get("state", "") == "processing":
+			processing += 1
+	var throughput = WorldState.metrics.get("throughput", {})
+	var completed = throughput.get("completed", {}).get("24h", 0)
+	var failed = throughput.get("failed", {}).get("24h", 0)
 	_update_stats_from_counts(processing, queued, completed, failed)
 
 

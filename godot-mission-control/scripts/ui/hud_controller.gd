@@ -179,7 +179,8 @@ func _update_metrics() -> void:
 	var workers_online = WorldState.workers.size()
 	var busy_workers = 0
 	for wid in WorldState.workers:
-		if WorldState.workers[wid].get("activeJobs", 0) > 0:
+		var w = WorldState.workers[wid]
+		if w.get("activeJobs", 0) > 0 or w.get("status", "") == "working" or w.get("status", "") == "busy":
 			busy_workers += 1
 
 	var text = "Q:%d  Run:%d  Done:%d  Fail:%d | Workers: %d/%d" % [
