@@ -21,9 +21,9 @@ const TYPE_TO_GRID_CELL = {
 }
 
 const DISTRICT_LABELS = {
-	"docks": {"text": "THE DOCKS", "color": Color(0.91, 0.66, 0.49), "pos": Vector2(-480, -280)},
-	"downtown": {"text": "DOWNTOWN", "color": Color(0.2, 1.0, 1.0), "pos": Vector2(0, -280)},
-	"shipyard": {"text": "SHIPYARD", "color": Color(0.51, 0.88, 0.67), "pos": Vector2(420, -280)},
+	"docks": {"text": "THE DOCKS", "color": Color(0.91, 0.66, 0.49), "pos": Vector2(-560, -320)},
+	"downtown": {"text": "DOWNTOWN", "color": Color(0.2, 1.0, 1.0), "pos": Vector2(0, -320)},
+	"shipyard": {"text": "SHIPYARD", "color": Color(0.51, 0.88, 0.67), "pos": Vector2(500, -320)},
 }
 
 var roads: RoadSystem = RoadSystem.new()
@@ -76,8 +76,8 @@ func _draw_city_background() -> void:
 	var bg = ColorRect.new()
 	bg.name = "CityBackground"
 	bg.z_index = -10
-	bg.size = Vector2(1400, 700)
-	bg.position = Vector2(-700, -350)
+	bg.size = Vector2(1600, 800)
+	bg.position = Vector2(-800, -400)
 	bg.color = Color(0.02, 0.02, 0.05, 1.0)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
@@ -89,26 +89,26 @@ func _draw_roads() -> void:
 	road_layer.z_index = -5
 	add_child(road_layer)
 
-	# --- Main boulevard: 1080×24 centered at origin (y=0) ---
+	# --- Main boulevard: 1280×24 centered at origin (y=0) ---
 	var blvd = ColorRect.new()
-	blvd.size = Vector2(1080, 24)
-	blvd.position = Vector2(-540, -12)
+	blvd.size = Vector2(1280, 24)
+	blvd.position = Vector2(-640, -12)
 	blvd.color = Color(0.06, 0.06, 0.10, 1.0)
 	blvd.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	road_layer.add_child(blvd)
 
 	# Cyan edge glow — top
 	var glow_top = ColorRect.new()
-	glow_top.size = Vector2(1080, 2)
-	glow_top.position = Vector2(-540, -12)
+	glow_top.size = Vector2(1280, 2)
+	glow_top.position = Vector2(-640, -12)
 	glow_top.color = Color(0.0, 1.0, 1.0, 0.15)
 	glow_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	road_layer.add_child(glow_top)
 
 	# Cyan edge glow — bottom
 	var glow_bot = ColorRect.new()
-	glow_bot.size = Vector2(1080, 2)
-	glow_bot.position = Vector2(-540, 10)
+	glow_bot.size = Vector2(1280, 2)
+	glow_bot.position = Vector2(-640, 10)
 	glow_bot.color = Color(0.0, 1.0, 1.0, 0.15)
 	glow_bot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	road_layer.add_child(glow_bot)
@@ -116,8 +116,8 @@ func _draw_roads() -> void:
 	# Dashed yellow center line
 	var dash_w = 24
 	var dash_gap = 12
-	var x = -540
-	while x < 540:
+	var x = -640
+	while x < 640:
 		var dash = ColorRect.new()
 		dash.size = Vector2(dash_w, 2)
 		dash.position = Vector2(x, -1)
@@ -127,11 +127,11 @@ func _draw_roads() -> void:
 		x += dash_w + dash_gap
 
 	# --- 4 side streets: vertical rects 12px wide, from y=-220 to y=220 ---
-	var side_street_xs = [-420, -180, 180, 360]
+	var side_street_xs = [-500, -220, 220, 440]
 	for sx in side_street_xs:
 		var street = ColorRect.new()
-		street.size = Vector2(12, 440)
-		street.position = Vector2(sx - 6, -220)
+		street.size = Vector2(12, 520)
+		street.position = Vector2(sx - 6, -260)
 		street.color = Color(0.06, 0.06, 0.10, 1.0)
 		street.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		road_layer.add_child(street)
@@ -139,8 +139,8 @@ func _draw_roads() -> void:
 		# Subtle left/right edge glow
 		for edge_offset in [-6, 6]:
 			var edge = ColorRect.new()
-			edge.size = Vector2(1, 440)
-			edge.position = Vector2(sx + edge_offset - 1, -220)
+			edge.size = Vector2(1, 520)
+			edge.position = Vector2(sx + edge_offset - 1, -260)
 			edge.color = Color(0.0, 1.0, 1.0, 0.10)
 			edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			road_layer.add_child(edge)
