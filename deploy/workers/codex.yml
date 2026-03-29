@@ -1,0 +1,47 @@
+# OpenAI cloud worker — runs on snoke alongside snoke-01
+# No llm.endpoint — cloud-only worker, skips LM Studio discovery
+node: snoke
+worker_id: codex-01
+
+cloud_providers:
+  - name: openai
+    endpoint: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    models:
+      - id: gpt-5.4
+        provider: openai
+        context_window: 1048576
+        loaded: true
+      - id: o3
+        provider: openai
+        context_window: 200000
+        loaded: true
+      - id: o4-mini
+        provider: openai
+        context_window: 200000
+        loaded: true
+      - id: gpt-4.1
+        provider: openai
+        context_window: 1048576
+        loaded: true
+      - id: gpt-4.1-mini
+        provider: openai
+        context_window: 1048576
+        loaded: true
+
+mcps: []
+
+skills:
+  - coding
+  - code-review
+  - refactoring
+  - debugging
+  - testing
+  - devops
+
+max_concurrent: 5
+
+server:
+  redis_url: redis://:${REDIS_PASSWORD}@100.x.x.x:6379
+  minio_endpoint: 100.x.x.x:9000
+  api_url: http://100.x.x.x:8000
