@@ -207,9 +207,11 @@ func _update_metrics() -> void:
 	]
 	metrics_label_2.text = throughput_text
 
-	# Saturation color
+	# Saturation color (green when idle — no inbound means nothing to worry about)
 	var sat_pct = sat * 100.0
-	if sat_pct > 80.0:
+	if in_1h == 0 and out_1h == 0:
+		metrics_label_2.modulate = Color.GREEN
+	elif sat_pct > 80.0:
 		metrics_label_2.modulate = Color.GREEN
 	elif sat_pct > 50.0:
 		metrics_label_2.modulate = Color.YELLOW
