@@ -457,15 +457,36 @@ async def _build_snapshot(deps: dict) -> dict:
         work_type = (job.get("metadata") or {}).get("workType", "orchestration")
         work_mix[work_type] = work_mix.get(work_type, 0) + 1
 
-    # Queue depth from Redis (real count, not just DB)
+    # Queue depth: Redis pending streams + worker streams + DB in-flight jobs
     real_queue_depth = 0
+    redis_queue = 0
     if redis_client:
         try:
             for priority in ("normal", "high", "low", "critical"):
-                length = await redis_client.xlen(f"laddr:jobs:pending:{priority}")
-                real_queue_depth += length
+                redis_queue += await redis_client.xlen(f"laddr:jobs:pending:{priority}")
+            for w in workers:
+                try:
+                    redis_queue += await redis_client.xlen(f"laddr:worker:{w['id']}")
+                except Exception:
+                    pass
         except Exception:
             pass
+    # DB in-flight = pending + running (not yet completed/failed)
+    db_inflight = 0
+    if database:
+        try:
+            from sqlalchemy import func as sa_func
+            from laddr.core.database import PromptExecution
+            with database.get_session() as session:
+                db_inflight = (
+                    session.query(sa_func.count())
+                    .select_from(PromptExecution)
+                    .filter(PromptExecution.status.in_(["pending", "running"]))
+                    .scalar()
+                ) or 0
+        except Exception:
+            pass
+    real_queue_depth = max(redis_queue, db_inflight)
 
     # Overflow/triage state
     overflow_active = real_queue_depth > 100
