@@ -241,11 +241,14 @@ func _set_facing(dir: String) -> void:
 func _process(delta: float) -> void:
 	match _state:
 		State.IDLE:
+			# Drift back toward home position
+			if position.distance_to(_home_pos) > 5:
+				var dir = (_home_pos - position).normalized()
+				position += dir * 60.0 * delta
 			# Idle bob
 			_sprite.position.y = sin(Time.get_ticks_msec() / 1500.0) * 2.0
 			_set_facing("front")
 			_idle_timer += delta
-			# Auto-start trips if there are queued jobs
 			if _idle_timer > 2.0:
 				var queued = WorldState.metrics.get("realQueueDepth", 0)
 				if queued > 0:
