@@ -54,6 +54,8 @@ func _ready() -> void:
 	WorldState.worker_changed.connect(_on_worker_changed)
 	WorldState.worker_removed.connect(_on_worker_removed)
 	WorldState.metrics_changed.connect(_on_metrics_changed)
+	WorldState.job_changed.connect(_on_job_changed)
+	WorldState.job_completed.connect(_on_job_completed)
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +313,7 @@ func _register_worker_stations() -> void:
 
 	for i in worker_stations.size():
 		var station_id = worker_stations[i]
-		var worker_pos = Vector2(start_x, start_y + i * 100)
+		var worker_pos = Vector2(start_x, start_y + i * 180)
 		roads._positions[station_id] = worker_pos
 
 
@@ -340,13 +342,17 @@ func _spawn_triage_droid() -> void:
 	_triage_droid.name = "TriageDroid"
 	_triage_droid.set_script(script)
 	var intake_pos = roads.get_position("intake")
+	var dispatch_pos = roads.get_position("dispatcher")
 	if intake_pos != Vector2.ZERO:
-		_triage_droid.position = intake_pos + Vector2(-60, 50)
+		_triage_droid.position = intake_pos + Vector2(30, 50)
 	else:
 		_triage_droid.position = Vector2(-540, 50)
 	_triage_droid.scale = Vector2(0.7, 0.7)
 	_triage_droid.z_index = 10
 	add_child(_triage_droid)
+	# Tell droid where to walk
+	if _triage_droid.has_method("set_stations"):
+		_triage_droid.set_stations(intake_pos, dispatch_pos)
 
 
 # ---------------------------------------------------------------------------
@@ -389,21 +395,22 @@ func _spawn_agent(worker_id: String) -> void:
 
 func _create_worker_home(worker_id: String, pos: Vector2) -> void:
 	var panel = Node2D.new()
-	panel.position = pos + Vector2(0, 35)
+	panel.position = pos + Vector2(0, 40)
 	panel.z_index = 8
 
-	# Background card
+	# Background card — taller to hold job blocks
 	var bg = ColorRect.new()
-	bg.size = Vector2(140, 52)
-	bg.position = Vector2(-70, 0)
+	bg.name = "CardBG"
+	bg.size = Vector2(160, 120)
+	bg.position = Vector2(-80, 0)
 	bg.color = Color(0.04, 0.06, 0.10, 0.92)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(bg)
 
 	# Top border accent
 	var border = ColorRect.new()
-	border.size = Vector2(140, 2)
-	border.position = Vector2(-70, 0)
+	border.size = Vector2(160, 2)
+	border.position = Vector2(-80, 0)
 	border.color = Color(0.2, 0.85, 0.95, 0.6)
 	border.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(border)
@@ -411,22 +418,22 @@ func _create_worker_home(worker_id: String, pos: Vector2) -> void:
 	# Worker name
 	var name_lbl = Label.new()
 	name_lbl.name = "NameLabel"
-	name_lbl.size = Vector2(136, 16)
-	name_lbl.position = Vector2(-68, 3)
+	name_lbl.size = Vector2(152, 18)
+	name_lbl.position = Vector2(-76, 4)
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var ns = LabelSettings.new()
-	ns.font_size = 10
+	ns.font_size = 11
 	ns.font_color = Color(0.3, 0.95, 1.0, 1.0)
 	ns.outline_size = 1
 	ns.outline_color = Color(0, 0, 0, 0.6)
 	name_lbl.label_settings = ns
 	panel.add_child(name_lbl)
 
-	# Model + stats line
+	# Model line
 	var info_lbl = Label.new()
 	info_lbl.name = "InfoLabel"
-	info_lbl.size = Vector2(136, 14)
-	info_lbl.position = Vector2(-68, 18)
+	info_lbl.size = Vector2(152, 14)
+	info_lbl.position = Vector2(-76, 22)
 	info_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var is_ = LabelSettings.new()
 	is_.font_size = 8
@@ -439,16 +446,22 @@ func _create_worker_home(worker_id: String, pos: Vector2) -> void:
 	# Status line
 	var status_lbl = Label.new()
 	status_lbl.name = "StatusLabel"
-	status_lbl.size = Vector2(136, 14)
-	status_lbl.position = Vector2(-68, 33)
+	status_lbl.size = Vector2(152, 14)
+	status_lbl.position = Vector2(-76, 36)
 	status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var ss = LabelSettings.new()
-	ss.font_size = 7
+	ss.font_size = 8
 	ss.font_color = Color(0.4, 0.8, 0.5, 0.9)
 	ss.outline_size = 1
 	ss.outline_color = Color(0, 0, 0, 0.5)
 	status_lbl.label_settings = ss
 	panel.add_child(status_lbl)
+
+	# Job blocks container
+	var job_container = Node2D.new()
+	job_container.name = "JobBlocks"
+	job_container.position = Vector2(0, 54)
+	panel.add_child(job_container)
 
 	add_child(panel)
 	_worker_home_panels[worker_id] = panel
@@ -463,6 +476,7 @@ func _update_worker_home(worker_id: String) -> void:
 	var name_lbl = panel.get_node_or_null("NameLabel")
 	var info_lbl = panel.get_node_or_null("InfoLabel")
 	var status_lbl = panel.get_node_or_null("StatusLabel")
+	var job_container = panel.get_node_or_null("JobBlocks")
 
 	# Worker display name
 	if name_lbl:
@@ -502,6 +516,91 @@ func _update_worker_home(worker_id: String) -> void:
 		else:
 			status_lbl.text = "idle | %d/hr" % completed_hr
 			status_lbl.label_settings.font_color = Color(0.5, 0.5, 0.55, 0.7)
+
+	# Build job blocks — show assigned/processing jobs for this worker
+	if job_container:
+		# Clear old blocks
+		for child in job_container.get_children():
+			child.queue_free()
+
+		var worker_jobs: Array = []
+		var worker_station_id = "station-" + worker_id
+		for jid in WorldState.jobs:
+			var job = WorldState.jobs[jid]
+			var job_state = job.get("state", "")
+			if job_state == "completed" or job_state == "cancelled" or job_state == "failed":
+				continue
+			var assigned = str(job.get("assignedAgent", ""))
+			var current_station = str(job.get("currentStationId", ""))
+			if assigned == worker_id or current_station == worker_station_id:
+				worker_jobs.append(job)
+		# Limit to 4 visible blocks
+		var visible_count = mini(worker_jobs.size(), 4)
+		var block_h = 14
+		var block_gap = 2
+		var block_w = 148
+
+		# Job type colors
+		var type_colors = {
+			"llm": Color(0.64, 0.48, 1.0, 0.7),
+			"code": Color(0.36, 0.55, 1.0, 0.7),
+			"tool": Color(0.34, 0.78, 0.71, 0.7),
+			"supervisor": Color(0.85, 0.69, 0.36, 0.7),
+			"review": Color(0.85, 0.69, 0.36, 0.7),
+		}
+		var default_color = Color(0.39, 0.84, 0.90, 0.7)
+
+		for i in visible_count:
+			var job = worker_jobs[i]
+			var job_type = str(job.get("type", ""))
+			var job_state = str(job.get("state", "queued"))
+			var job_id = str(job.get("id", ""))
+			var short_id = job_id.left(8) if job_id.length() > 8 else job_id
+
+			var block = Node2D.new()
+			block.position = Vector2(0, i * (block_h + block_gap))
+
+			# Block background
+			var block_bg = ColorRect.new()
+			block_bg.size = Vector2(block_w, block_h)
+			block_bg.position = Vector2(-block_w / 2.0, 0)
+			block_bg.color = Color(0.08, 0.10, 0.16, 0.9)
+			block_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			block.add_child(block_bg)
+
+			# Left color accent bar
+			var accent_color = type_colors.get(job_type, default_color)
+			var accent_bar = ColorRect.new()
+			accent_bar.size = Vector2(3, block_h)
+			accent_bar.position = Vector2(-block_w / 2.0, 0)
+			accent_bar.color = accent_color
+			accent_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			block.add_child(accent_bar)
+
+			# Job label
+			var job_lbl = Label.new()
+			job_lbl.size = Vector2(block_w - 8, block_h)
+			job_lbl.position = Vector2(-block_w / 2.0 + 6, 0)
+			job_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			var js = LabelSettings.new()
+			js.font_size = 7
+			js.font_color = Color(0.8, 0.82, 0.85, 0.9)
+			js.outline_size = 1
+			js.outline_color = Color(0, 0, 0, 0.5)
+			job_lbl.label_settings = js
+			# Show type + short ID + state
+			var display_type = job_type.left(10) if job_type.length() > 10 else job_type
+			job_lbl.text = "%s  %s  %s" % [display_type, short_id, job_state]
+			block.add_child(job_lbl)
+
+			job_container.add_child(block)
+
+		# Resize card background to fit job blocks
+		var card_bg = panel.get_node_or_null("CardBG")
+		if card_bg:
+			var base_height = 56
+			var jobs_height = visible_count * (block_h + block_gap)
+			card_bg.size.y = base_height + jobs_height + 8
 
 
 # ---------------------------------------------------------------------------
@@ -551,7 +650,7 @@ func _distribute_jobs() -> void:
 func _auto_fit_camera() -> void:
 	# Include worker cards on the right (extends ~200px past output-dock)
 	var city_w = 1600.0
-	var city_h = 700.0
+	var city_h = 900.0
 	# Shift center slightly right to account for worker panel
 	var center = Vector2(80.0, 0.0)
 
@@ -584,6 +683,16 @@ func _on_worker_changed(worker_id: String, is_new: bool) -> void:
 		_spawn_agent(worker_id)
 	else:
 		_update_worker_home(worker_id)
+
+
+func _on_job_changed(_job_id: String) -> void:
+	for wid in _worker_home_panels:
+		_update_worker_home(wid)
+
+
+func _on_job_completed(_job_id: String) -> void:
+	for wid in _worker_home_panels:
+		_update_worker_home(wid)
 
 
 func _on_worker_removed(worker_id: String) -> void:
