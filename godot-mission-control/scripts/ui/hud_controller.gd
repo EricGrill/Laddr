@@ -159,29 +159,28 @@ func _on_snapshot_loaded() -> void:
 func _update_metrics() -> void:
 	if not metrics_label:
 		return
-	var queued = 0
+
+	# Use real metrics from backend, not snapshot job list counts
+	var queued = WorldState.metrics.get("realQueueDepth", 0)
+	var overflow = WorldState.metrics.get("overflowActive", false)
+	var spend = WorldState.metrics.get("dailyVeniceSpend", 0.0)
+
+	# Processing = jobs with state "processing" in snapshot
 	var processing = 0
-	var completed = 0
-	var failed = 0
 	for jid in WorldState.jobs:
-		var state = WorldState.jobs[jid].get("state", "queued")
-		match state:
-			"queued": queued += 1
-			"processing": processing += 1
-			"completed": completed += 1
-			"failed": failed += 1
+		if WorldState.jobs[jid].get("state", "") == "processing":
+			processing += 1
+
+	# Completed/failed from throughput metrics (real DB counts, last 24h)
+	var throughput = WorldState.metrics.get("throughput", {})
+	var completed = throughput.get("completed", {}).get("24h", 0)
+	var failed = throughput.get("failed", {}).get("24h", 0)
+
 	var workers_online = WorldState.workers.size()
 	var busy_workers = 0
 	for wid in WorldState.workers:
 		if WorldState.workers[wid].get("activeJobs", 0) > 0:
 			busy_workers += 1
-
-	# Use real Redis queue depth
-	var real_q = WorldState.metrics.get("realQueueDepth", queued)
-	if real_q > queued:
-		queued = real_q
-	var overflow = WorldState.metrics.get("overflowActive", false)
-	var spend = WorldState.metrics.get("dailyVeniceSpend", 0.0)
 
 	var text = "Q:%d  Run:%d  Done:%d  Fail:%d | Workers: %d/%d" % [
 		queued, processing, completed, failed, busy_workers, workers_online
