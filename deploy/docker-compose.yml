@@ -92,17 +92,6 @@ services:
       redis:
         condition: service_healthy
 
-  codex-worker:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-    command: laddr worker start --config /config/codex.yml
-    volumes:
-      - ./workers/codex.yml:/config/codex.yml
-    env_file: .env
-    depends_on:
-      redis:
-        condition: service_healthy
 
 volumes:
   redis-data:

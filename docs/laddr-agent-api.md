@@ -392,9 +392,8 @@ asyncio.run(main())
 | maul-01 | maul (Mac mini) | qwen3.5-9b, granite-4-h-tiny + cloud | 4 |
 | snoke-01 | snoke (Mac mini) | qwen3.5-9b, granite-4-h-tiny + cloud | 4 |
 | ventress-01 | ventress (Mac) | 29 local models + cloud | 8 |
-| codex-01 | snoke | gpt-5.4, o3, o4-mini, gpt-4.1, gpt-4.1-mini | 5 |
 
-**Cloud providers (overflow):** Venice AI (deepseek-v3.2, llama-3.3-70b) + NVIDIA (deepseek-v3.2, llama-3.3-70b, qwen3.5-397b, nemotron-super-49b) + OpenAI (gpt-5.4, o3, o4-mini, gpt-4.1, gpt-4.1-mini)
+**Cloud providers (overflow):** Venice AI (deepseek-v3.2, llama-3.3-70b) + NVIDIA (deepseek-v3.2, llama-3.3-70b, qwen3.5-397b, nemotron-super-49b)
 
 **Pull-based agent workers:** Claude Code, Codex (codex-agent-01), Kimi
 
