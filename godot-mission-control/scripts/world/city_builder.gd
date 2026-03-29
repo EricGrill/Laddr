@@ -549,16 +549,18 @@ func _distribute_jobs() -> void:
 # ---------------------------------------------------------------------------
 
 func _auto_fit_camera() -> void:
-	var city_w = 1400.0
-	var city_h = 800.0
-	var center = Vector2(0.0, 0.0)
+	# Include worker cards on the right (extends ~200px past output-dock)
+	var city_w = 1600.0
+	var city_h = 700.0
+	# Shift center slightly right to account for worker panel
+	var center = Vector2(80.0, 0.0)
 
 	var viewport_size = get_viewport().get_visible_rect().size
-	var padding = 80.0
+	var padding = 20.0
 	var zoom_x = viewport_size.x / (city_w + padding)
 	var zoom_y = viewport_size.y / (city_h + padding)
 	var fit_zoom = min(zoom_x, zoom_y)
-	fit_zoom = clamp(fit_zoom, 0.3, 1.5)
+	fit_zoom = clamp(fit_zoom, 0.3, 2.5)
 
 	var camera = get_parent().get_node_or_null("Camera")
 	if camera:
