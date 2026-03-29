@@ -234,29 +234,14 @@ class Dispatcher:
 
         # Log triage decision
         if overflow_active:
-            budget_ok = await self._check_overflow_budget()
-            if budget_ok:
-                logger.info(
-                    "TRIAGE: queue=%d complexity=%s → overflow to Venice",
-                    queue_depth, complexity,
-                )
-                # Tag the job so workers know to use Venice
-                job.setdefault("routing", {})["prefer_cloud"] = True
-                job["routing"]["complexity"] = complexity
-                # Rough Venice cost estimate per job
-                # deepseek-v3.2: ~$0.0003/1K input, ~$0.0012/1K output
-                # Typical eval job: ~2K input + ~500 output ≈ $0.0012
-                if complexity == "simple":
-                    await self._record_overflow_cost(0.0008)
-                else:
-                    await self._record_overflow_cost(0.0015)
-            else:
-                logger.info(
-                    "TRIAGE: queue=%d complexity=%s → budget exhausted, local only",
-                    queue_depth, complexity,
-                )
-        else:
-            logger.info("TRIAGE: queue=%d complexity=%s → normal routing", queue_depth, complexity)
+            logger.info(
+                "TRIAGE: queue=%d complexity=%s → overflow active",
+                queue_depth, complexity,
+            )
+            # Tag the job so workers know cloud is OK to use
+            job.setdefault("routing", {})["prefer_cloud"] = True
+            job["routing"]["complexity"] = complexity
+        # Cost tracking moved to worker — only recorded when Venice is actually called
 
         # Find worker (select_best_worker handles capacity checks)
         return await self.async_find_worker_for_job(job)

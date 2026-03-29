@@ -559,6 +559,12 @@ class WorkerProcess:
                 base_url=cloud_provider["endpoint"],
             )
             logger.info("Job %s using cloud provider %s model %s", job_id, cloud_provider.get("name", "cloud"), model["id"])
+            # Track actual cloud spend in Redis
+            try:
+                cost = 0.0015  # estimated per-job cost
+                await self._redis.incrbyfloat("laddr:overflow:daily_spend", cost)
+            except Exception:
+                pass
         else:
             llm = OpenAILLM(
                 api_key=self.llm_api_key,
