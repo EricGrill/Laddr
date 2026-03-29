@@ -346,6 +346,7 @@ func _spawn_triage_droid() -> void:
 	_triage_droid.name = "TriageDroid"
 	_triage_droid.set_script(script)
 	var intake_pos = roads.get_position("intake")
+	var dispatch_pos = roads.get_position("dispatcher")
 	if intake_pos != Vector2.ZERO:
 		_triage_droid.position = intake_pos + Vector2(40, 60)
 	else:
@@ -353,6 +354,9 @@ func _spawn_triage_droid() -> void:
 	_triage_droid.scale = Vector2(0.8, 0.8)
 	_triage_droid.z_index = 10
 	add_child(_triage_droid)
+	# Tell droid the real station positions for walking
+	if _triage_droid.has_method("set_stations"):
+		_triage_droid.set_stations(intake_pos, dispatch_pos)
 
 	# Give triage droid a home card at intake (like worker agents)
 	_create_triage_home(_triage_droid.position)
