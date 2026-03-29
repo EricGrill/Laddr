@@ -1,39 +1,37 @@
 extends Node2D
-## Triage Droid — picks up job packets from Intake, carries them to Dispatcher.
-## Animates walking between the two stations, carrying a colored packet.
+## Triage Droid — scans incoming jobs at the Intake Bay.
+## Shuttles packets a short distance to show processing activity.
+## Always stays near the Intake Bay area.
 
 var _sprite: Sprite2D
 var _label: Label
 var _status_card: Node2D
 var _status_text: Label
-var _carried_packet: ColorRect  # Visual packet being carried
+var _carried_packet: Node2D
 var _sprite_textures: Dictionary = {}
-var _jobs_scanned: int = 0
 
-# Movement state
-enum State { IDLE, WALKING_TO_INTAKE, PICKING_UP, WALKING_TO_DISPATCH, DROPPING_OFF }
+# Movement — short shuttle between pickup and dropoff near intake
+enum State { IDLE, WALKING_TO_PICKUP, PICKING_UP, WALKING_TO_DROPOFF, DROPPING_OFF }
 var _state: int = State.IDLE
-var _intake_pos: Vector2 = Vector2.ZERO
-var _dispatch_pos: Vector2 = Vector2.ZERO
-var _home_pos: Vector2 = Vector2.ZERO
-var _move_speed: float = 120.0
+var _pickup_offset: Vector2 = Vector2(-30, -20)   # Left side of intake
+var _dropoff_offset: Vector2 = Vector2(30, 40)     # Right/below intake
+var _move_speed: float = 80.0
 var _action_timer: float = 0.0
 var _idle_timer: float = 0.0
 var _trips_completed: int = 0
+var _home_offset: Vector2 = Vector2(0, 10)
 
 const SPRITE_BASE = "res://assets/sprites/workers/triage/"
 const DIRECTIONS = ["front", "iso_left", "iso_right"]
 const PACKET_COLORS = [
-	Color(0.39, 0.84, 0.90, 0.9),  # cyan - normal
-	Color(0.85, 0.69, 0.36, 0.9),  # gold - high
-	Color(0.85, 0.36, 0.36, 0.9),  # red - critical
-	Color(0.64, 0.48, 1.0, 0.9),   # purple - llm
+	Color(0.39, 0.84, 0.90, 0.9),
+	Color(0.85, 0.69, 0.36, 0.9),
+	Color(0.85, 0.36, 0.36, 0.9),
+	Color(0.64, 0.48, 1.0, 0.9),
 ]
 
 
 func _ready() -> void:
-	_home_pos = position
-
 	for dir in DIRECTIONS:
 		var tex = load(SPRITE_BASE + "triage_" + dir + ".png")
 		if tex:
@@ -45,7 +43,6 @@ func _ready() -> void:
 		_sprite.texture = _sprite_textures["front"]
 	add_child(_sprite)
 
-	# Name label
 	_label = Label.new()
 	_label.text = "Triage Droid"
 	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -59,54 +56,45 @@ func _ready() -> void:
 	_label.label_settings = lbl_settings
 	add_child(_label)
 
-	# Carried packet — visible crate with border
+	# Carried crate
 	_carried_packet = Node2D.new()
 	_carried_packet.position = Vector2(0, -42)
 	_carried_packet.visible = false
 	var crate_bg = ColorRect.new()
 	crate_bg.name = "CrateBG"
-	crate_bg.size = Vector2(22, 18)
-	crate_bg.position = Vector2(-11, -9)
+	crate_bg.size = Vector2(20, 16)
+	crate_bg.position = Vector2(-10, -8)
 	crate_bg.color = PACKET_COLORS[0]
 	crate_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_carried_packet.add_child(crate_bg)
-	var crate_border = ColorRect.new()
-	crate_border.size = Vector2(22, 2)
-	crate_border.position = Vector2(-11, -9)
-	crate_border.color = Color(1, 1, 1, 0.4)
-	crate_border.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_carried_packet.add_child(crate_border)
-	var crate_stripe = ColorRect.new()
-	crate_stripe.size = Vector2(2, 18)
-	crate_stripe.position = Vector2(-1, -9)
-	crate_stripe.color = Color(1, 1, 1, 0.25)
-	crate_stripe.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_carried_packet.add_child(crate_stripe)
+	var crate_top = ColorRect.new()
+	crate_top.size = Vector2(20, 2)
+	crate_top.position = Vector2(-10, -8)
+	crate_top.color = Color(1, 1, 1, 0.35)
+	crate_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_carried_packet.add_child(crate_top)
 	add_child(_carried_packet)
 
 	# Status card
 	_status_card = Node2D.new()
-	_status_card.position = Vector2(0, -65)
-
+	_status_card.position = Vector2(0, -70)
 	var bg = ColorRect.new()
-	bg.size = Vector2(140, 45)
-	bg.position = Vector2(-70, -28)
+	bg.size = Vector2(160, 55)
+	bg.position = Vector2(-80, -28)
 	bg.color = Color(0.06, 0.12, 0.18, 0.92)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_status_card.add_child(bg)
-
 	var border = ColorRect.new()
-	border.size = Vector2(140, 2)
-	border.position = Vector2(-70, -28)
+	border.size = Vector2(160, 2)
+	border.position = Vector2(-80, -28)
 	border.color = Color(0.3, 0.8, 1.0, 0.9)
 	border.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_status_card.add_child(border)
-
 	_status_text = Label.new()
-	_status_text.position = Vector2(-64, -24)
-	_status_text.size = Vector2(128, 40)
+	_status_text.position = Vector2(-74, -24)
+	_status_text.size = Vector2(148, 50)
 	var st_settings = LabelSettings.new()
-	st_settings.font_size = 10
+	st_settings.font_size = 9
 	st_settings.font_color = Color(0.7, 0.92, 1.0, 1.0)
 	_status_text.label_settings = st_settings
 	_status_text.autowrap_mode = TextServer.AUTOWRAP_WORD
@@ -118,118 +106,76 @@ func _ready() -> void:
 	WorldState.metrics_changed.connect(_update_stats)
 
 
-func set_stations(intake: Vector2, dispatch: Vector2) -> void:
-	_intake_pos = intake
-	_dispatch_pos = dispatch
-
-
 func _on_snapshot() -> void:
-	_jobs_scanned = WorldState.jobs.size()
-	# Find station positions from world builder
-	_find_station_positions()
 	_update_stats()
 
 
-func _find_station_positions() -> void:
-	var builders = get_tree().get_nodes_in_group("world_builder")
-	if builders.size() > 0:
-		var builder = builders[0]
-		if builder.has_method("get_station_screen_pos"):
-			var ip = builder.get_station_screen_pos("intake")
-			var dp = builder.get_station_screen_pos("dispatcher")
-			if ip != Vector2.ZERO:
-				_intake_pos = ip
-			if dp != Vector2.ZERO:
-				_dispatch_pos = dp
-
-
 func _on_job_changed(_job_id: String) -> void:
-	_jobs_scanned += 1
-	# Only start moving if there are actual queued jobs
 	var queued = WorldState.metrics.get("realQueueDepth", 0)
 	if _state == State.IDLE and queued > 0:
 		_start_trip()
 
 
 func _start_trip() -> void:
-	if _intake_pos == Vector2.ZERO or _dispatch_pos == Vector2.ZERO:
-		_find_station_positions()
-	if _intake_pos == Vector2.ZERO:
-		return
-	_state = State.WALKING_TO_INTAKE
+	_state = State.WALKING_TO_PICKUP
 	_set_facing("iso_left")
+	_update_stats()
+
+
+func _get_target_pos(offset: Vector2) -> Vector2:
+	# All movement is relative to our spawn position (parent handles absolute placement)
+	return offset
 
 
 func _update_stats() -> void:
 	var queued = WorldState.metrics.get("realQueueDepth", 0)
 	var overflow = WorldState.metrics.get("overflowActive", false)
-	var processing = _count_processing()
-
-	var lines = []
-
 	var throughput = WorldState.metrics.get("throughput", {})
 	var done_hr = throughput.get("completed", {}).get("1h", 0)
+	var processing = 0
+	for jid in WorldState.jobs:
+		if WorldState.jobs[jid].get("state", "") == "processing":
+			processing += 1
 
+	var lines = []
 	match _state:
-		State.WALKING_TO_INTAKE:
-			lines.append("FETCHING JOB")
+		State.WALKING_TO_PICKUP, State.PICKING_UP:
 			var job_name = _get_current_job_name()
+			lines.append("FETCHING")
 			if job_name != "":
 				lines.append(job_name)
 			lines.append("Q:%d | %d/hr" % [queued, done_hr])
-		State.PICKING_UP:
-			lines.append("PICKING UP")
+		State.WALKING_TO_DROPOFF, State.DROPPING_OFF:
 			var job_name = _get_current_job_name()
-			if job_name != "":
-				lines.append(job_name)
-			lines.append("Q:%d remaining" % queued)
-		State.WALKING_TO_DISPATCH:
-			lines.append("DELIVERING")
-			var job_name = _get_current_job_name()
+			lines.append("DISPATCHING")
 			if job_name != "":
 				lines.append(job_name)
 			lines.append("Q:%d | Run:%d | %d/hr" % [queued, processing, done_hr])
-		State.DROPPING_OFF:
-			lines.append("DISPATCHING")
-			lines.append("Q:%d | %d/hr" % [queued, done_hr])
 		_:
 			if overflow:
 				lines.append("OVERFLOW ACTIVE")
 				var spend = WorldState.metrics.get("dailyVeniceSpend", 0.0)
 				lines.append("Venice: $%.2f" % spend)
-				lines.append("Q:%d | %d/hr" % [queued, done_hr])
 			elif queued > 0:
-				lines.append("SCANNING QUEUE")
-				lines.append("Q:%d | %d/hr" % [queued, done_hr])
+				lines.append("SCANNING Q:%d" % queued)
+				lines.append("%d/hr | %d workers" % [done_hr, WorldState.workers.size()])
 			else:
 				lines.append("QUEUE CLEAR")
 				lines.append("%d/hr | %d workers" % [done_hr, WorldState.workers.size()])
-
 	_status_text.text = "\n".join(lines)
-
-	# Only move when there are actual jobs in queue
-	if queued > 0 and _state == State.IDLE:
-		_start_trip()
-
-
-func _count_processing() -> int:
-	var count = 0
-	for jid in WorldState.jobs:
-		if WorldState.jobs[jid].get("state", "") == "processing":
-			count += 1
-	return count
 
 
 func _get_current_job_name() -> String:
 	for jid in WorldState.jobs:
 		var job = WorldState.jobs[jid]
-		if job.get("state", "") == "queued" or job.get("state", "") == "processing":
+		var s = job.get("state", "")
+		if s == "queued" or s == "processing":
 			var raw = str(job.get("type", ""))
 			for line in raw.split("\n"):
 				var t = line.strip_edges()
 				if t.begins_with("# "):
-					return t.substr(2).left(24)
-			return raw.left(24)
+					return t.substr(2).left(22)
+			return raw.left(22)
 	return ""
 
 
@@ -239,92 +185,83 @@ func _set_facing(dir: String) -> void:
 
 
 func _process(delta: float) -> void:
+	# All movement is relative offsets from spawn point
+	var local_pos = _sprite.position  # Use sprite offset for local shuttle
+
 	match _state:
 		State.IDLE:
-			# Drift back toward home position
-			if position.distance_to(_home_pos) > 5:
-				var dir = (_home_pos - position).normalized()
-				position += dir * 60.0 * delta
-			# Idle bob
-			_sprite.position.y = sin(Time.get_ticks_msec() / 1500.0) * 2.0
+			# Drift to home
+			var home = _home_offset
+			_sprite.position = _sprite.position.lerp(Vector2(home.x, home.y + sin(Time.get_ticks_msec() / 1500.0) * 2.0), delta * 2.0)
 			_set_facing("front")
 			_idle_timer += delta
-			if _idle_timer > 2.0:
+			if _idle_timer > 1.5:
 				var queued = WorldState.metrics.get("realQueueDepth", 0)
 				if queued > 0:
 					_start_trip()
 				_idle_timer = 0
 
-		State.WALKING_TO_INTAKE:
-			var target = _intake_pos
-			var dir = (target - position).normalized()
-			position += dir * _move_speed * delta
-			if dir.x < -0.1:
-				_set_facing("iso_left")
-			elif dir.x > 0.1:
-				_set_facing("iso_right")
-			elif dir.y < -0.1:
+		State.WALKING_TO_PICKUP:
+			var target = _pickup_offset
+			var dir = (target - _sprite.position).normalized()
+			_sprite.position += dir * _move_speed * delta
+			if dir.x < 0:
 				_set_facing("iso_left")
 			else:
 				_set_facing("iso_right")
-			_sprite.position.y = sin(Time.get_ticks_msec() / 200.0) * 1.5
-			if position.distance_to(target) < 10:
-				position = target
+			_sprite.position.y += sin(Time.get_ticks_msec() / 200.0) * 0.3
+			if _sprite.position.distance_to(target) < 5:
+				_sprite.position = target
 				_state = State.PICKING_UP
-				_action_timer = 0.6
+				_action_timer = 0.5
 
 		State.PICKING_UP:
-			# Quick pickup animation — wobble + show packet
 			_action_timer -= delta
 			_sprite.rotation = sin(Time.get_ticks_msec() / 100.0) * 0.12
-			if _action_timer <= 0.3 and not _carried_packet.visible:
+			if _action_timer <= 0.25 and not _carried_packet.visible:
 				_carried_packet.visible = true
 				var crate = _carried_packet.get_node_or_null("CrateBG")
 				if crate:
 					crate.color = PACKET_COLORS[_trips_completed % PACKET_COLORS.size()]
 			if _action_timer <= 0:
 				_sprite.rotation = 0
-				_state = State.WALKING_TO_DISPATCH
+				_state = State.WALKING_TO_DROPOFF
 				_set_facing("iso_right")
+				_update_stats()
 
-		State.WALKING_TO_DISPATCH:
-			var target = _dispatch_pos
-			var dir = (target - position).normalized()
-			position += dir * _move_speed * delta
-			if dir.x < -0.1:
-				_set_facing("iso_left")
-			elif dir.x > 0.1:
-				_set_facing("iso_right")
-			elif dir.y > 0.1:
+		State.WALKING_TO_DROPOFF:
+			var target = _dropoff_offset
+			var dir = (target - _sprite.position).normalized()
+			_sprite.position += dir * _move_speed * delta
+			if dir.x > 0:
 				_set_facing("iso_right")
 			else:
 				_set_facing("iso_left")
-			_sprite.position.y = sin(Time.get_ticks_msec() / 200.0) * 1.5
-			_carried_packet.position.y = -42 + sin(Time.get_ticks_msec() / 200.0) * 1.5
-			if position.distance_to(target) < 10:
-				position = target
+			_sprite.position.y += sin(Time.get_ticks_msec() / 200.0) * 0.3
+			_carried_packet.position = Vector2(_sprite.position.x, _sprite.position.y - 42)
+			if _sprite.position.distance_to(target) < 5:
+				_sprite.position = target
 				_state = State.DROPPING_OFF
-				_action_timer = 0.4
+				_action_timer = 0.3
 
 		State.DROPPING_OFF:
 			_action_timer -= delta
-			_sprite.rotation = sin(Time.get_ticks_msec() / 100.0) * 0.08
-			if _action_timer <= 0.2:
+			_sprite.rotation = sin(Time.get_ticks_msec() / 100.0) * 0.06
+			if _action_timer <= 0.15:
 				_carried_packet.visible = false
 			if _action_timer <= 0:
 				_sprite.rotation = 0
 				_trips_completed += 1
 				_update_stats()
-				# Check if more jobs to carry
 				var queued = WorldState.metrics.get("realQueueDepth", 0)
 				if queued > 0:
-					_state = State.WALKING_TO_INTAKE
+					_state = State.WALKING_TO_PICKUP
 					_set_facing("iso_left")
 				else:
-					# Return to home (midpoint between intake and dispatch)
 					_state = State.IDLE
-					if _intake_pos != Vector2.ZERO and _dispatch_pos != Vector2.ZERO:
-						_home_pos = (_intake_pos + _dispatch_pos) / 2
+					_idle_timer = 0
 
-	# Float status card
-	_status_card.position.y = -65 + sin(Time.get_ticks_msec() / 1200.0) * 2.0
+	# Float status card above sprite
+	_status_card.position = Vector2(_sprite.position.x, _sprite.position.y - 70)
+	_carried_packet.position = Vector2(_sprite.position.x, _sprite.position.y - 42) if _carried_packet.visible else _carried_packet.position
+	_label.position = Vector2(_sprite.position.x - 40, _sprite.position.y + 30)

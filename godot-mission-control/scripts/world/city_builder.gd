@@ -346,17 +346,105 @@ func _spawn_triage_droid() -> void:
 	_triage_droid.name = "TriageDroid"
 	_triage_droid.set_script(script)
 	var intake_pos = roads.get_position("intake")
-	var dispatch_pos = roads.get_position("dispatcher")
 	if intake_pos != Vector2.ZERO:
-		_triage_droid.position = intake_pos + Vector2(30, 50)
+		_triage_droid.position = intake_pos + Vector2(40, 60)
 	else:
-		_triage_droid.position = Vector2(-540, 50)
-	_triage_droid.scale = Vector2(0.7, 0.7)
+		_triage_droid.position = Vector2(-520, -140)
+	_triage_droid.scale = Vector2(0.8, 0.8)
 	_triage_droid.z_index = 10
 	add_child(_triage_droid)
-	# Tell droid where to walk
-	if _triage_droid.has_method("set_stations"):
-		_triage_droid.set_stations(intake_pos, dispatch_pos)
+
+	# Give triage droid a home card at intake (like worker agents)
+	_create_triage_home(_triage_droid.position)
+
+
+var _triage_home_panel: Node2D = null
+
+func _create_triage_home(pos: Vector2) -> void:
+	var panel = Node2D.new()
+	panel.position = pos + Vector2(80, -20)
+	panel.z_index = 8
+
+	var card_w = 140
+	var bg = ColorRect.new()
+	bg.name = "CardBG"
+	bg.size = Vector2(card_w, 50)
+	bg.position = Vector2(-card_w / 2.0, 0)
+	bg.color = Color(0.04, 0.06, 0.10, 0.92)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(bg)
+
+	var border = ColorRect.new()
+	border.size = Vector2(card_w, 2)
+	border.position = Vector2(-card_w / 2.0, 0)
+	border.color = Color(0.3, 0.8, 1.0, 0.7)
+	border.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(border)
+
+	var name_lbl = Label.new()
+	name_lbl.name = "NameLabel"
+	name_lbl.text = "Triage Droid"
+	name_lbl.size = Vector2(card_w - 8, 16)
+	name_lbl.position = Vector2(-card_w / 2.0 + 4, 4)
+	var ns = LabelSettings.new()
+	ns.font_size = 10
+	ns.font_color = Color(0.5, 0.85, 1.0, 1.0)
+	ns.outline_size = 1
+	ns.outline_color = Color(0, 0, 0, 0.6)
+	name_lbl.label_settings = ns
+	panel.add_child(name_lbl)
+
+	var info_lbl = Label.new()
+	info_lbl.name = "InfoLabel"
+	info_lbl.text = "Intake Scanner"
+	info_lbl.size = Vector2(card_w - 8, 14)
+	info_lbl.position = Vector2(-card_w / 2.0 + 4, 19)
+	var is_ = LabelSettings.new()
+	is_.font_size = 7
+	is_.font_color = Color(0.55, 0.6, 0.65, 0.9)
+	is_.outline_size = 1
+	is_.outline_color = Color(0, 0, 0, 0.5)
+	info_lbl.label_settings = is_
+	panel.add_child(info_lbl)
+
+	var status_lbl = Label.new()
+	status_lbl.name = "StatusLabel"
+	status_lbl.text = "idle"
+	status_lbl.size = Vector2(card_w - 8, 14)
+	status_lbl.position = Vector2(-card_w / 2.0 + 4, 33)
+	var ss = LabelSettings.new()
+	ss.font_size = 8
+	ss.font_color = Color(0.4, 0.8, 0.5, 0.9)
+	ss.outline_size = 1
+	ss.outline_color = Color(0, 0, 0, 0.5)
+	status_lbl.label_settings = ss
+	panel.add_child(status_lbl)
+
+	add_child(panel)
+	_triage_home_panel = panel
+	_update_triage_home()
+
+
+func _update_triage_home() -> void:
+	if not _triage_home_panel:
+		return
+	var info_lbl = _triage_home_panel.get_node_or_null("InfoLabel")
+	var status_lbl = _triage_home_panel.get_node_or_null("StatusLabel")
+
+	var queued = WorldState.metrics.get("realQueueDepth", 0)
+	var throughput = WorldState.metrics.get("throughput", {})
+	var done_hr = throughput.get("completed", {}).get("1h", 0)
+
+	if info_lbl:
+		info_lbl.text = "Intake Scanner • %d/hr" % done_hr
+
+	if status_lbl:
+		if queued > 0:
+			status_lbl.text = "sorting Q:%d" % queued
+			status_lbl.label_settings.font_color = Color(0.3, 0.95, 1.0, 0.9)
+		else:
+			status_lbl.text = "idle | standing by"
+			status_lbl.label_settings.font_color = Color(0.5, 0.5, 0.55, 0.7)
 
 
 # ---------------------------------------------------------------------------
@@ -766,6 +854,7 @@ func _auto_fit_camera() -> void:
 func _on_metrics_changed() -> void:
 	for wid in _worker_home_panels:
 		_update_worker_home(wid)
+	_update_triage_home()
 
 
 func _on_worker_changed(worker_id: String, is_new: bool) -> void:
