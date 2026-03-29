@@ -1,8 +1,8 @@
 extends Camera2D
-## Isometric camera with pan, zoom, and focus controls.
+## Orthogonal camera with pan, zoom, and focus controls.
 
 @export var zoom_min: float = 0.3
-@export var zoom_max: float = 3.0
+@export var zoom_max: float = 1.5
 @export var zoom_step: float = 0.1
 @export var pan_speed: float = 400.0
 @export var ease_speed: float = 5.0
@@ -41,51 +41,12 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	# WASD panning
-	var pan_input = Vector2.ZERO
-	if Input.is_action_pressed("ui_left"):
-		pan_input.x -= 1
-	if Input.is_action_pressed("ui_right"):
-		pan_input.x += 1
-	if Input.is_action_pressed("ui_up"):
-		pan_input.y -= 1
-	if Input.is_action_pressed("ui_down"):
-		pan_input.y += 1
-	if pan_input != Vector2.ZERO:
-		_follow_target = null
-		_target_position += pan_input * pan_speed * delta / zoom.x
-
-	# Follow target
-	if _follow_target and is_instance_valid(_follow_target):
-		_target_position = _follow_target.global_position
-
-	# Smooth movement
 	global_position = global_position.lerp(_target_position, ease_speed * delta)
-	zoom = zoom.lerp(_target_zoom * (1.0 + _zoom_pulse), ease_speed * delta)
-	_update_zoom_pulse(delta)
-	_update_shake(delta)
+	zoom = zoom.lerp(_target_zoom, ease_speed * delta)
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	# Middle mouse pan
-	if event is InputEventMouseButton:
-		if event.button_index == MOUSE_BUTTON_MIDDLE:
-			_is_panning = event.pressed
-			_pan_start = event.position
-
-		# Scroll zoom
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_target_zoom = (_target_zoom + Vector2.ONE * zoom_step).clampf(zoom_min, zoom_max)
-		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_target_zoom = (_target_zoom - Vector2.ONE * zoom_step).clampf(zoom_min, zoom_max)
-
-	if event is InputEventMouseMotion and _is_panning:
-		_follow_target = null
-		_target_position -= event.relative / zoom.x
-
-	# Home key reset
-	if event is InputEventKey and event.pressed and event.keycode == KEY_HOME:
-		_on_reset_requested()
+func _unhandled_input(_event: InputEvent) -> void:
+	pass  # Fixed camera — no user interaction
 
 
 func pulse_attention(zoom_delta: float = 0.03, shake_strength: float = 3.0, duration: float = 0.2) -> void:
@@ -180,9 +141,5 @@ func _on_follow_stopped() -> void:
 	_follow_target = null
 
 
-func _on_follow_requested(entity_type: String, entity_id: String) -> void:
-	# Find the node by entity_id in the scene tree
-	# WorldBuilder maintains agent_nodes dictionary
-	var world_builder = get_tree().get_first_node_in_group("world_builder")
-	if world_builder and world_builder.agent_nodes.has(entity_id):
-		follow(world_builder.agent_nodes[entity_id])
+func _on_follow_requested(_entity_type: String, _entity_id: String) -> void:
+	pass  # Fixed camera — no follow

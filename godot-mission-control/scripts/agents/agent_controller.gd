@@ -24,7 +24,7 @@ var _active_jobs: int = 0
 @onready var status_text: Label = $Body/StatusCard/StatusText
 @onready var click_area: Area2D = $ClickArea
 
-var _nav_graph: NavGraph
+var _nav_graph  # RoadSystem or NavGraph — both have find_path() and get_position()
 var _pickup_timer: float = 0.0
 var _pickup_duration: float = 0.5
 
@@ -45,7 +45,7 @@ const DIRECTIONS = ["front", "iso_left", "iso_right"]
 const WORK_STATIONS = ["dispatcher", "intake", "output-dock"]
 
 
-func setup(id: String, nav: NavGraph, color: Color) -> void:
+func setup(id: String, nav, color: Color) -> void:
 	worker_id = id
 	_nav_graph = nav
 	agent_color = color
