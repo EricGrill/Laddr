@@ -95,8 +95,8 @@ const STATION_REFS = new WeakMap<Container, StationRefs>();
 export function createStation(config: StationConfig, onClick?: (id: string) => void): Container {
   const accent = ACCENT_COLORS[config.type];
   const isDispatcher = config.type === 'dispatcher';
-  const platformW = isDispatcher ? 160 : 130;
-  const platformH = isDispatcher ? 110 : 90;
+  const platformW = isDispatcher ? 220 : 180;
+  const platformH = isDispatcher ? 150 : 120;
   const halfW = platformW / 2;
   const halfH = platformH / 2;
 
@@ -135,7 +135,7 @@ export function createStation(config: StationConfig, onClick?: (id: string) => v
   // Badge text
   const badgeText = new Text({
     text: '',
-    style: new TextStyle({ fontSize: 9, fill: '#D9D7D1', fontFamily: 'Arial, Helvetica, sans-serif' }),
+    style: new TextStyle({ fontSize: 12, fill: '#D9D7D1', fontFamily: 'Arial, Helvetica, sans-serif' }),
   });
   badgeText.visible = false;
   container.addChild(badgeText);
@@ -144,7 +144,7 @@ export function createStation(config: StationConfig, onClick?: (id: string) => v
   const queueCountText = new Text({
     text: config.queueDepth > 0 ? String(config.queueDepth) : '',
     style: new TextStyle({
-      fontSize: 24,
+      fontSize: 36,
       fill: '#ffffff',
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontWeight: 'bold',
@@ -159,7 +159,7 @@ export function createStation(config: StationConfig, onClick?: (id: string) => v
   const labelText = new Text({
     text: config.label,
     style: new TextStyle({
-      fontSize: 16,
+      fontSize: 20,
       fill: '#D9D7D1',
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontWeight: 'bold',
@@ -167,21 +167,21 @@ export function createStation(config: StationConfig, onClick?: (id: string) => v
   });
   labelText.anchor.set(0.5, 0);
   labelText.x = 0;
-  labelText.y = halfH + 6;
+  labelText.y = halfH + 8;
   container.addChild(labelText);
 
   // State text — below label, colored by state
   const stateText = new Text({
     text: STATE_LABELS[config.state] ?? 'IDLE',
     style: new TextStyle({
-      fontSize: 9,
+      fontSize: 13,
       fill: STATE_LABEL_COLORS[config.state] ?? '#888888',
       fontFamily: 'Arial, Helvetica, sans-serif',
     }),
   });
   stateText.anchor.set(0.5, 0);
   stateText.x = 0;
-  stateText.y = halfH + 22;
+  stateText.y = halfH + 30;
   container.addChild(stateText);
 
   // Update badge
@@ -247,7 +247,7 @@ export function tickStation(container: Container, elapsed: number): void {
   refs.glowGfx.clear();
   if (isActive) {
     const glowAlpha = pulse(elapsed, 0.05, 0.15, 2);
-    const radius = refs.isDispatcher ? 70 : 50;
+    const radius = refs.isDispatcher ? 95 : 70;
     refs.glowGfx.circle(0, 0, radius);
     refs.glowGfx.fill({ color: refs.accent, alpha: glowAlpha });
   }
@@ -256,7 +256,7 @@ export function tickStation(container: Container, elapsed: number): void {
   if (refs.isDispatcher) {
     refs.ringGfx.clear();
     const ringAngle = elapsed * 0.5;
-    const radius = 55;
+    const radius = 75;
     const segments = 8;
     const arcLen = (Math.PI * 2) / segments;
     for (let i = 0; i < segments; i++) {
@@ -292,7 +292,7 @@ function drawPlatform(
 function drawStateDot(g: Graphics, state: StationState, halfW: number, halfH: number) {
   g.clear();
   const dotColor = STATE_DOT_COLORS[state] ?? 0x666666;
-  g.circle(halfW - 8, -halfH + 8, 4);
+  g.circle(halfW - 10, -halfH + 10, 6);
   g.fill({ color: dotColor });
 }
 
@@ -306,7 +306,7 @@ function updateBadge(
 ) {
   badgeGfx.clear();
   if (queueDepth > 0) {
-    badgeGfx.roundRect(-halfW - 2, -halfH - 2, 18, 14, 4);
+    badgeGfx.roundRect(-halfW - 2, -halfH - 2, 24, 18, 5);
     badgeGfx.fill({ color: 0x2c313a });
     badgeGfx.stroke({ color: accent, width: 1, alpha: 0.5 });
     badgeText.text = String(queueDepth);

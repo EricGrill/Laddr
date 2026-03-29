@@ -33,13 +33,13 @@ function workerPosition(
   index: number,
   total: number,
 ): { x: number; y: number } {
-  const spacing = 28;
+  const spacing = 40;
   const cols = Math.ceil(Math.sqrt(total));
   const col = index % cols;
   const row = Math.floor(index / cols);
   return {
     x: stationX - ((cols - 1) * spacing) / 2 + col * spacing,
-    y: stationY + 60 + row * spacing,
+    y: stationY + 80 + row * spacing,
   };
 }
 
@@ -50,15 +50,15 @@ function packetPosition(
   state: string,
 ): { x: number; y: number } {
   // Simple horizontal row above station, max 5 shown
-  const offsetX = (index - 2) * 30;
+  const offsetX = (index - 2) * 40;
 
   if (state === 'queued' || state === 'created') {
-    return { x: stationX + offsetX, y: stationY - 55 };
+    return { x: stationX + offsetX, y: stationY - 75 };
   }
   if (state === 'processing') {
-    return { x: stationX + offsetX, y: stationY - 45 };
+    return { x: stationX + offsetX, y: stationY - 60 };
   }
-  return { x: stationX + offsetX * 0.5, y: stationY - 35 };
+  return { x: stationX + offsetX * 0.5, y: stationY - 50 };
 }
 
 function buildStationList(
@@ -262,62 +262,62 @@ export function PixiCanvas() {
       const activeJobsText = new Text({
         text: 'ACTIVE JOBS: 0',
         style: new TextStyle({
-          fontSize: 20,
+          fontSize: 28,
           fill: '#63d7e6',
           fontFamily: 'Arial, Helvetica, sans-serif',
           fontWeight: 'bold',
         }),
       });
-      activeJobsText.x = 20;
-      activeJobsText.y = 14;
+      activeJobsText.x = 24;
+      activeJobsText.y = 16;
       overlayContainer.addChild(activeJobsText);
 
       const workersText = new Text({
         text: 'WORKERS: 0 online',
         style: new TextStyle({
-          fontSize: 15,
+          fontSize: 20,
           fill: '#cccccc',
           fontFamily: 'Arial, Helvetica, sans-serif',
         }),
       });
-      workersText.x = 20;
-      workersText.y = 34;
+      workersText.x = 24;
+      workersText.y = 46;
       overlayContainer.addChild(workersText);
 
       const queueDepthText = new Text({
         text: 'QUEUE DEPTH: 0',
         style: new TextStyle({
-          fontSize: 15,
+          fontSize: 20,
           fill: '#cccccc',
           fontFamily: 'Arial, Helvetica, sans-serif',
         }),
       });
-      queueDepthText.x = 20;
-      queueDepthText.y = 50;
+      queueDepthText.x = 24;
+      queueDepthText.y = 70;
       overlayContainer.addChild(queueDepthText);
 
       const workMixText = new Text({
         text: 'WORK MIX: orchestration',
         style: new TextStyle({
-          fontSize: 15,
+          fontSize: 20,
           fill: '#cccccc',
           fontFamily: 'Arial, Helvetica, sans-serif',
         }),
       });
-      workMixText.x = 20;
-      workMixText.y = 68;
+      workMixText.x = 24;
+      workMixText.y = 94;
       overlayContainer.addChild(workMixText);
 
       const blockedText = new Text({
         text: 'BLOCKED: 0',
         style: new TextStyle({
-          fontSize: 15,
+          fontSize: 20,
           fill: '#cccccc',
           fontFamily: 'Arial, Helvetica, sans-serif',
         }),
       });
-      blockedText.x = 20;
-      blockedText.y = 86;
+      blockedText.x = 24;
+      blockedText.y = 118;
       overlayContainer.addChild(blockedText);
 
       // Initial sync

@@ -5,7 +5,7 @@ import { bezierPoint, type BezierPath } from './AnimationManager';
 
 const LINE_COLOR = 0x3b4656;
 const DOT_COLOR = 0x63d7e6;
-const DOT_RADIUS = 3;
+const DOT_RADIUS = 4;
 const DOTS_PER_PIPE = 4;
 
 // Pipeline connections (from -> to)
@@ -65,7 +65,7 @@ export function createPipelines(): Container {
     linesGfx.moveTo(path.x0, path.y0);
     linesGfx.bezierCurveTo(path.cx0, path.cy0, path.cx1, path.cy1, path.x1, path.y1);
   }
-  linesGfx.stroke({ color: LINE_COLOR, width: 1.5, alpha: 0.4 });
+  linesGfx.stroke({ color: LINE_COLOR, width: 2.5, alpha: 0.4 });
   container.addChild(linesGfx);
 
   // Animated flow dots

@@ -11,7 +11,7 @@ export function TopBar() {
   const blockedJobs = metrics.jobsBlocked ?? 0;
 
   return (
-    <div className="h-10 bg-[#0d1220] border-b border-[#1a2040] flex items-center px-4 gap-6 text-xs flex-shrink-0">
+    <div className="h-14 bg-[#0d1220] border-b border-[#1a2040] flex items-center px-6 gap-8 text-sm flex-shrink-0">
       <span className="text-cyan-400 font-semibold tracking-wider uppercase">
         Mission Control
       </span>

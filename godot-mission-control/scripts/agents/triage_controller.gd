@@ -253,17 +253,20 @@ func _process(delta: float) -> void:
 				_idle_timer = 0
 
 		State.WALKING_TO_INTAKE:
-			var dir = (_intake_pos - global_position).normalized()
-			global_position += dir * _move_speed * delta
-			# Face direction of travel
+			var target = _intake_pos
+			var dir = (target - position).normalized()
+			position += dir * _move_speed * delta
 			if dir.x < -0.1:
 				_set_facing("iso_left")
 			elif dir.x > 0.1:
 				_set_facing("iso_right")
-			# Walk bob
+			elif dir.y < -0.1:
+				_set_facing("iso_left")
+			else:
+				_set_facing("iso_right")
 			_sprite.position.y = sin(Time.get_ticks_msec() / 200.0) * 1.5
-			if global_position.distance_to(_intake_pos) < 10:
-				global_position = _intake_pos
+			if position.distance_to(target) < 10:
+				position = target
 				_state = State.PICKING_UP
 				_action_timer = 0.6
 
@@ -282,17 +285,21 @@ func _process(delta: float) -> void:
 				_set_facing("iso_right")
 
 		State.WALKING_TO_DISPATCH:
-			var dir = (_dispatch_pos - global_position).normalized()
-			global_position += dir * _move_speed * delta
+			var target = _dispatch_pos
+			var dir = (target - position).normalized()
+			position += dir * _move_speed * delta
 			if dir.x < -0.1:
 				_set_facing("iso_left")
 			elif dir.x > 0.1:
 				_set_facing("iso_right")
-			# Walk bob with packet
+			elif dir.y > 0.1:
+				_set_facing("iso_right")
+			else:
+				_set_facing("iso_left")
 			_sprite.position.y = sin(Time.get_ticks_msec() / 200.0) * 1.5
 			_carried_packet.position.y = -42 + sin(Time.get_ticks_msec() / 200.0) * 1.5
-			if global_position.distance_to(_dispatch_pos) < 10:
-				global_position = _dispatch_pos
+			if position.distance_to(target) < 10:
+				position = target
 				_state = State.DROPPING_OFF
 				_action_timer = 0.4
 
@@ -304,14 +311,17 @@ func _process(delta: float) -> void:
 			if _action_timer <= 0:
 				_sprite.rotation = 0
 				_trips_completed += 1
+				_update_stats()
 				# Check if more jobs to carry
 				var queued = WorldState.metrics.get("realQueueDepth", 0)
 				if queued > 0:
 					_state = State.WALKING_TO_INTAKE
 					_set_facing("iso_left")
 				else:
+					# Return to home (midpoint between intake and dispatch)
 					_state = State.IDLE
-					_update_stats()
+					if _intake_pos != Vector2.ZERO and _dispatch_pos != Vector2.ZERO:
+						_home_pos = (_intake_pos + _dispatch_pos) / 2
 
 	# Float status card
 	_status_card.position.y = -65 + sin(Time.get_ticks_msec() / 1200.0) * 2.0

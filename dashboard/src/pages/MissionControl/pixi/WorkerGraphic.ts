@@ -159,28 +159,28 @@ export function createWorker(id: string, roleColor: number, capabilities?: strin
   const nameText = new Text({
     text: `${shortId} \u2022 idle`,
     style: new TextStyle({
-      fontSize: 11,
+      fontSize: 14,
       fill: '#cccccc',
       fontFamily: 'Arial, Helvetica, sans-serif',
     }),
   });
   nameText.anchor.set(0.5, 0);
   nameText.x = 0;
-  nameText.y = 11;
+  nameText.y = 16;
   container.addChild(nameText);
 
   // Status text
   const statusText = new Text({
     text: 'online',
     style: new TextStyle({
-      fontSize: 10,
+      fontSize: 12,
       fill: '#4caf50',
       fontFamily: 'Arial, Helvetica, sans-serif',
     }),
   });
   statusText.anchor.set(0.5, 0);
   statusText.x = 0;
-  statusText.y = 22;
+  statusText.y = 30;
   container.addChild(statusText);
 
   // Job count badge
@@ -191,15 +191,15 @@ export function createWorker(id: string, roleColor: number, capabilities?: strin
   const jobBadgeText = new Text({
     text: '',
     style: new TextStyle({
-      fontSize: 10,
+      fontSize: 13,
       fill: '#ffffff',
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontWeight: 'bold',
     }),
   });
   jobBadgeText.anchor.set(0.5, 0.5);
-  jobBadgeText.x = 12;
-  jobBadgeText.y = -8;
+  jobBadgeText.x = 18;
+  jobBadgeText.y = -12;
   jobBadgeText.visible = false;
   container.addChild(jobBadgeText);
 
@@ -210,14 +210,14 @@ export function createWorker(id: string, roleColor: number, capabilities?: strin
   const bubbleText = new Text({
     text: '',
     style: new TextStyle({
-      fontSize: 10,
+      fontSize: 13,
       fill: '#0d1220',
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontWeight: 'bold',
     }),
   });
   bubbleText.anchor.set(0.5, 0.5);
-  bubbleText.y = -34;
+  bubbleText.y = -46;
   bubbleText.visible = false;
   container.addChild(bubbleText);
 
@@ -436,7 +436,7 @@ export function updateWorker(
   if (jobsChanged) {
     if (activeJobs > 0) {
       refs.jobBadgeGfx.clear();
-      refs.jobBadgeGfx.circle(12, -8, 6);
+      refs.jobBadgeGfx.circle(18, -12, 8);
       refs.jobBadgeGfx.fill({ color: 0xe35b5b, alpha: 0.9 });
       refs.jobBadgeGfx.visible = true;
       refs.jobBadgeText.text = String(activeJobs);
@@ -489,8 +489,8 @@ export function updateWorker(
     breathAlpha = 0.3;
   }
 
-  const bodyW = 40;
-  const bodyH = 30;
+  const bodyW = 56;
+  const bodyH = 42;
   const alpha = isOffline ? 0.3 : 1;
 
   // Draw body
@@ -502,7 +502,7 @@ export function updateWorker(
   g.fill({ color: 0x2c313a, alpha });
   g.roundRect(-bodyW / 2 + 3, -bodyH / 2 + 2, bodyW - 6, 5, 2);
   g.fill({ color: refs.roleColor, alpha: breathAlpha * alpha });
-  g.circle(0, -bodyH / 2 + 9, 4);
+  g.circle(0, -bodyH / 2 + 12, 6);
   g.fill({ color: refs.roleColor, alpha: breathAlpha * alpha });
   if (isDraining) {
     g.roundRect(-bodyW / 2 - 1, -bodyH / 2 - 1, bodyW + 2, bodyH + 2, 4);
@@ -514,7 +514,7 @@ export function updateWorker(
   ag.clear();
   if (isBusy && !isOffline) {
     const activityRing = elapsed * 3;
-    const radius = 12;
+    const radius = 18;
     const segments = 6;
     const arcLen = (Math.PI * 2) / segments;
     for (let i = 0; i < segments; i++) {
@@ -529,7 +529,7 @@ export function updateWorker(
   if (refs.anim.phase === 'processing' && !isOffline) {
     const procAlpha = pulse(elapsed, 0.3, 0.8, 0.6);
     const procAngle = elapsed * 5;
-    const procRadius = 15;
+    const procRadius = 22;
     ag.arc(0, 0, procRadius, procAngle, procAngle + Math.PI * 0.8);
     ag.stroke({ color: refs.roleColor, width: 2, alpha: procAlpha });
     ag.arc(0, 0, procRadius, procAngle + Math.PI, procAngle + Math.PI * 1.8);
@@ -544,8 +544,8 @@ export function updateWorker(
     || refs.anim.phase === 'processing';
   if (isCarrying && !isOffline) {
     const chipColor = JOB_TYPE_COLORS[refs.anim.carriedJobType] ?? JOB_TYPE_COLORS.default;
-    const chipW = 22;
-    const chipH = 14;
+    const chipW = 30;
+    const chipH = 18;
     // Bob animation
     const bob = Math.sin(elapsed * 4) * 2;
     const chipY = -bodyH / 2 - 8 + bob;
@@ -617,10 +617,10 @@ export function updateWorkerBubble(
   refs.bubbleText.visible = true;
   refs.bubbleGfx.visible = true;
 
-  const width = Math.max(70, refs.bubbleText.width + 14);
-  const height = 18;
+  const width = Math.max(90, refs.bubbleText.width + 18);
+  const height = 24;
   const x = -width / 2;
-  const y = -43;
+  const y = -56;
   const fillColor = fillColors[kind] ?? fillColors.orchestration;
 
   refs.bubbleText.x = 0;

@@ -33,6 +33,13 @@ var _activity_timer: float = 0.0
 var _activity_interval: float = 4.0
 var _home_station_id: String = ""
 
+# Work cycle state machine for simulated activity
+enum CyclePhase { HOME, TO_INTAKE, AT_INTAKE, TO_WORK, WORKING, TO_OUTPUT, AT_OUTPUT, TO_HOME }
+var _cycle_phase: CyclePhase = CyclePhase.HOME
+var _cycle_work_station: String = ""  # Station to process at based on capabilities
+var _work_timer: float = 0.0
+var _work_fidget_timer: float = 2.0
+
 # Preloaded sprite textures per role
 var _sprite_textures: Dictionary = {}
 
@@ -114,6 +121,17 @@ func _process(delta: float) -> void:
 	# Update status card
 	_update_status_card()
 
+	# Working fidget — periodic signs of life while processing at a station
+	if current_state == State.WORKING and _cycle_phase == CyclePhase.WORKING:
+		_work_timer -= delta
+		_work_fidget_timer -= delta
+		if _work_fidget_timer <= 0:
+			_work_fidget_timer = randf_range(2.0, 4.0)
+			_do_work_fidget()
+		if _work_timer <= 0:
+			# Done working — trigger delivery via _simulate_busy
+			_activity_timer = 0.0
+
 	# Activity simulation — make agents move and do things based on worker state
 	_activity_timer -= delta
 	if _activity_timer <= 0:
@@ -182,6 +200,8 @@ func _update_status_card() -> void:
 func _simulate_activity() -> void:
 	if current_state == State.MOVING or current_state == State.CARRYING:
 		return  # Already moving
+	if current_state == State.WORKING and _cycle_phase == CyclePhase.WORKING and _work_timer > 0:
+		return  # Still working — _process handles fidgets and completion
 
 	var worker_data = WorldState.workers.get(worker_id, {})
 	var active = worker_data.get("activeJobs", 0)
@@ -200,45 +220,78 @@ func _simulate_activity() -> void:
 
 
 func _simulate_busy() -> void:
-	var destinations = []
-	for sid in ["dispatcher", "intake", "output-dock"]:
-		if _nav_graph and _nav_graph.get_position(sid) != Vector2.ZERO:
-			destinations.append(sid)
-	if _home_station_id != "" and _nav_graph and _nav_graph.get_position(_home_station_id) != Vector2.ZERO:
-		destinations.append(_home_station_id)
+	# Drive a proper work cycle: home → intake → work station → output → home
+	match _cycle_phase:
+		CyclePhase.HOME, CyclePhase.AT_OUTPUT, CyclePhase.TO_HOME:
+			# Start a new cycle — go pick up a job from intake
+			_cycle_phase = CyclePhase.TO_INTAKE
+			_pick_work_station()
+			_move_to_station("intake")
+			_set_state(State.MOVING)
+			if animator:
+				animator.show_emote("thinking")
 
-	if destinations.is_empty():
-		if animator:
-			animator.show_emote("lightbulb")
+		CyclePhase.AT_INTAKE:
+			# Picked up job — carry it to the work station
+			_cycle_phase = CyclePhase.TO_WORK
+			_show_carried_packet()
+			_move_to_station(_cycle_work_station)
+			_set_state(State.CARRYING)
+			if animator:
+				animator.show_emote("lightbulb")
+
+		CyclePhase.WORKING:
+			# Done working — deliver to output
+			_cycle_phase = CyclePhase.TO_OUTPUT
+			_move_to_station("output-dock")
+			_set_state(State.DELIVERING)
+			if animator:
+				animator.show_emote("success")
+
+		_:
+			pass  # Moving — wait for arrival
+
+
+func _pick_work_station() -> void:
+	# Choose a work station based on the worker's actual capabilities
+	var worker_data = WorldState.workers.get(worker_id, {})
+	var caps = worker_data.get("capabilities", [])
+	var station_map = {"llm": "research", "code": "code", "tool": "code", "review": "review", "research": "research"}
+	for cap in caps:
+		var cap_str = str(cap.get("id", cap) if cap is Dictionary else cap).to_lower()
+		for key in station_map:
+			if key in cap_str:
+				var target = station_map[key]
+				if _nav_graph and _nav_graph.get_position(target) != Vector2.ZERO:
+					_cycle_work_station = target
+					return
+	# Fallback to dispatcher
+	_cycle_work_station = "dispatcher"
+
+
+func _show_carried_packet() -> void:
+	if not job_packet_visual:
 		return
-
-	# Weighted: prefer home station and dispatcher
-	var weighted = [_home_station_id, _home_station_id, "dispatcher", "dispatcher"]
-	for sid in destinations:
-		weighted.append(sid)
-	var target = weighted[randi() % weighted.size()]
-	if _nav_graph and _nav_graph.get_position(target) == Vector2.ZERO:
-		target = destinations[randi() % destinations.size()]
-
-	# Show carrying a packet
-	if job_packet_visual:
-		job_packet_visual.visible = true
-		var priorities = ["normal", "high", "critical"]
-		var pri = priorities[randi() % priorities.size()]
-		var tex = load("res://assets/sprites/packets/packet_%s.png" % pri)
-		if tex:
-			job_packet_visual.texture = tex
-
-	_move_to_station(target)
-	_set_state(State.CARRYING)
-
-	# Varied emotes while working
-	if animator:
-		var emotes = ["lightbulb", "thinking", "success", "lightbulb", "thinking"]
-		animator.show_emote(emotes[randi() % emotes.size()])
+	job_packet_visual.visible = true
+	# Try to match an actual job's priority
+	var worker_station_id = "station-" + worker_id
+	var pri = "normal"
+	for jid in WorldState.jobs:
+		var job = WorldState.jobs[jid]
+		var assigned = str(job.get("assignedAgent", ""))
+		var station = str(job.get("currentStationId", ""))
+		if assigned == worker_id or station == worker_station_id:
+			pri = str(job.get("priority", "normal"))
+			break
+	var tex = load("res://assets/sprites/packets/packet_%s.png" % pri)
+	if tex:
+		job_packet_visual.texture = tex
 
 
 func _simulate_idle() -> void:
+	# Reset cycle when idle
+	_cycle_phase = CyclePhase.HOME
+
 	# When idle, go home and stay there. Occasional fidget only.
 	if _home_station_id != "" and _nav_graph:
 		var home_pos = _nav_graph.get_position(_home_station_id)
@@ -251,6 +304,28 @@ func _simulate_idle() -> void:
 	# Already home — just fidget occasionally
 	if randf() < 0.3 and animator:
 		animator.play_squash()
+	# Hide packet when idle
+	if job_packet_visual:
+		job_packet_visual.visible = false
+
+
+func _do_work_fidget() -> void:
+	# Periodic signs of life while working at a station
+	if not animator:
+		return
+	var roll = randf()
+	if roll < 0.35:
+		# Squash/bounce — the classic "I'm here" animation
+		animator.play_squash()
+	elif roll < 0.65:
+		# Thinking emote — actively processing
+		animator.show_emote("thinking")
+	elif roll < 0.85:
+		# Lightbulb — making progress
+		animator.show_emote("lightbulb")
+	else:
+		# Stretch — taking a micro-break
+		animator.play_stretch()
 
 
 func _set_state(new_state: State) -> void:
@@ -397,32 +472,89 @@ func _update_carried_packet() -> void:
 func _on_arrived() -> void:
 	match current_state:
 		State.MOVING:
-			_set_state(State.IDLE)
-			if animator:
-				animator.play_squash()
+			# Advance cycle: arrived at intake → pause to pick up
+			if _cycle_phase == CyclePhase.TO_INTAKE:
+				_cycle_phase = CyclePhase.AT_INTAKE
+				_set_state(State.PICKING_UP)
+				_pickup_timer = 0.8
+				if animator:
+					animator.play_squash()
+			elif _cycle_phase == CyclePhase.TO_HOME:
+				_cycle_phase = CyclePhase.HOME
+				_set_state(State.IDLE)
+				if animator:
+					animator.play_squash()
+			else:
+				_set_state(State.IDLE)
+				if animator:
+					animator.play_squash()
+
 		State.CARRYING:
-			_set_state(State.WORKING)
-			if animator:
-				animator.play_squash()
-				animator.show_emote("lightbulb")
-			# After working briefly, go back idle
-			_activity_timer = randf_range(2.0, 5.0)
+			# Arrived at work station — start working
+			if _cycle_phase == CyclePhase.TO_WORK:
+				_cycle_phase = CyclePhase.WORKING
+				_set_state(State.WORKING)
+				# Scale work duration: more active jobs = longer stay at station
+				var wd = WorldState.workers.get(worker_id, {})
+				var job_count = wd.get("activeJobs", 1)
+				_work_timer = randf_range(6.0, 12.0) + job_count * 3.0
+				_work_fidget_timer = randf_range(1.5, 3.0)
+				_activity_timer = _work_timer + 1.0  # Safety — work_timer drives delivery
+				if animator:
+					animator.play_squash()
+					animator.show_emote("lightbulb")
+			else:
+				_set_state(State.WORKING)
+				_activity_timer = randf_range(2.0, 5.0)
+				if animator:
+					animator.play_squash()
+
 		State.DELIVERING:
+			# Arrived at output-dock — job delivered
+			_cycle_phase = CyclePhase.AT_OUTPUT
 			current_job_id = ""
 			if job_packet_visual:
 				job_packet_visual.visible = false
-			_set_state(State.IDLE)
 			if animator:
 				animator.play_stretch()
 				animator.show_emote("success")
+			# Check if still busy — start new cycle or go home
+			var worker_data = WorldState.workers.get(worker_id, {})
+			var active = worker_data.get("activeJobs", 0)
+			if active > 0:
+				_activity_timer = randf_range(1.0, 2.0)  # Quick turnaround
+				_set_state(State.IDLE)
+			else:
+				# Go home
+				_cycle_phase = CyclePhase.TO_HOME
+				_move_to_station(_home_station_id)
+				_set_state(State.MOVING)
+
 		State.ERRORED:
 			current_job_id = ""
 			if job_packet_visual:
 				job_packet_visual.visible = false
+			_cycle_phase = CyclePhase.HOME
 			_set_state(State.IDLE)
+
+		State.PICKING_UP:
+			# Pickup timer handles transition, but if mover fires arrived during pickup
+			pass
 
 
 func _transition_to_carrying() -> void:
+	# If we're in the work cycle (picked up at intake), use the cycle flow
+	if _cycle_phase == CyclePhase.AT_INTAKE:
+		_cycle_phase = CyclePhase.TO_WORK
+		_show_carried_packet()
+		_move_to_station(_cycle_work_station)
+		_set_state(State.CARRYING)
+		if animator:
+			animator.play_stretch()
+			animator.show_emote("lightbulb")
+		return
+
+	# Fallback for signal-driven jobs
 	var job_data = WorldState.jobs.get(current_job_id, {})
 	var target = job_data.get("currentStationId", "")
 	if target == "" or target == target_station_id:

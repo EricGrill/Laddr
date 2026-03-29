@@ -68,7 +68,7 @@ export function createPacket(
   const jobNameText = new Text({
     text: displayName,
     style: new TextStyle({
-      fontSize: 10,
+      fontSize: 13,
       fill: '#cccccc',
       fontFamily: 'Arial, Helvetica, sans-serif',
     }),
@@ -82,7 +82,7 @@ export function createPacket(
   const priorityLabel = new Text({
     text: priority === 'critical' ? 'CRIT' : priority === 'high' ? 'HI' : '',
     style: new TextStyle({
-      fontSize: 9,
+      fontSize: 12,
       fill: priority === 'critical' ? '#e35b5b' : '#f2a65a',
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontWeight: 'bold',
@@ -153,11 +153,11 @@ export function updatePacket(
   refs.glowGfx.clear();
   if (isCritical) {
     const alpha = pulse(elapsed, 0.3, 0.8, 0.5);
-    refs.glowGfx.circle(0, 0, 10);
+    refs.glowGfx.circle(0, 0, 14);
     refs.glowGfx.fill({ color: 0xe35b5b, alpha: alpha * 0.3 });
   } else if (isHigh) {
     const alpha = pulse(elapsed, 0.2, 0.5, 1.2);
-    refs.glowGfx.circle(0, 0, 10);
+    refs.glowGfx.circle(0, 0, 14);
     refs.glowGfx.fill({ color: 0xf2a65a, alpha: alpha * 0.3 });
   }
 }
@@ -171,18 +171,18 @@ function redrawPacket(refs: PacketRefs) {
   // Card (queued)
   refs.cardGfx.clear();
   if (isQueued) {
-    const w = 36, h = 24;
-    refs.cardGfx.roundRect(-w / 2, -h / 2, w, h, 2);
+    const w = 48, h = 32;
+    refs.cardGfx.roundRect(-w / 2, -h / 2, w, h, 3);
     refs.cardGfx.fill({ color: 0x2c313a, alpha: 0.8 });
-    refs.cardGfx.stroke({ color: typeColor, width: 1, alpha: 0.6 });
-    refs.cardGfx.circle(w / 2 - 3, -h / 2 + 3, 2);
+    refs.cardGfx.stroke({ color: typeColor, width: 1.5, alpha: 0.6 });
+    refs.cardGfx.circle(w / 2 - 4, -h / 2 + 4, 3);
     refs.cardGfx.fill({ color: priorityColor, alpha: 0.8 });
   }
 
   // Capsule (transit)
   refs.capsuleGfx.clear();
   if (isTransit) {
-    const w = 10, h = 6;
+    const w = 14, h = 8;
     refs.capsuleGfx.roundRect(-w / 2, -h / 2, w, h, 3);
     refs.capsuleGfx.fill({ color: typeColor, alpha: 0.6 });
     refs.capsuleGfx.stroke({ color: typeColor, width: 1, alpha: 0.8 });
@@ -191,7 +191,7 @@ function redrawPacket(refs: PacketRefs) {
   // Chip (processing)
   refs.chipGfx.clear();
   if (isProcessing) {
-    const w = 36, h = 22;
+    const w = 48, h = 30;
     refs.chipGfx.roundRect(-w / 2, -h / 2, w, h, 2);
     refs.chipGfx.fill({ color: 0x2c313a, alpha: 0.9 });
     refs.chipGfx.stroke({ color: typeColor, width: 1, alpha: 0.7 });

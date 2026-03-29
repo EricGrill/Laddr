@@ -304,16 +304,20 @@ func _register_worker_stations() -> void:
 		worker_stations.append(station_id)
 	worker_stations.sort()
 
-	# Position worker stations in a vertical column on the right side
+	# Position worker stations in a 2-column grid on the right side
 	var base_pos = roads.get_position("output-dock")
 	if base_pos == Vector2.ZERO:
 		base_pos = Vector2(420, -160)
-	var start_x = base_pos.x + 180  # Right of the output dock
-	var start_y = -200
+	var start_x = base_pos.x + 160
+	var start_y = -220
+	var col_spacing = 210
+	var row_spacing = 240
 
 	for i in worker_stations.size():
 		var station_id = worker_stations[i]
-		var worker_pos = Vector2(start_x, start_y + i * 180)
+		var col = i % 2
+		var row = i / 2
+		var worker_pos = Vector2(start_x + col * col_spacing, start_y + row * row_spacing)
 		roads._positions[station_id] = worker_pos
 
 
@@ -398,29 +402,31 @@ func _create_worker_home(worker_id: String, pos: Vector2) -> void:
 	panel.position = pos + Vector2(0, 40)
 	panel.z_index = 8
 
-	# Background card — taller to hold job blocks
+	var card_w = 180
+
+	# Background card
 	var bg = ColorRect.new()
 	bg.name = "CardBG"
-	bg.size = Vector2(160, 120)
-	bg.position = Vector2(-80, 0)
-	bg.color = Color(0.04, 0.06, 0.10, 0.92)
+	bg.size = Vector2(card_w, 140)
+	bg.position = Vector2(-card_w / 2.0, 0)
+	bg.color = Color(0.04, 0.06, 0.10, 0.94)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(bg)
 
-	# Top border accent
+	# Top border accent — color changes by worker activity
 	var border = ColorRect.new()
-	border.size = Vector2(160, 2)
-	border.position = Vector2(-80, 0)
+	border.name = "TopBorder"
+	border.size = Vector2(card_w, 2)
+	border.position = Vector2(-card_w / 2.0, 0)
 	border.color = Color(0.2, 0.85, 0.95, 0.6)
 	border.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(border)
 
-	# Worker name
+	# Worker name — left-aligned, bold
 	var name_lbl = Label.new()
 	name_lbl.name = "NameLabel"
-	name_lbl.size = Vector2(152, 18)
-	name_lbl.position = Vector2(-76, 4)
-	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.size = Vector2(card_w - 8, 16)
+	name_lbl.position = Vector2(-card_w / 2.0 + 6, 4)
 	var ns = LabelSettings.new()
 	ns.font_size = 11
 	ns.font_color = Color(0.3, 0.95, 1.0, 1.0)
@@ -429,35 +435,41 @@ func _create_worker_home(worker_id: String, pos: Vector2) -> void:
 	name_lbl.label_settings = ns
 	panel.add_child(name_lbl)
 
-	# Model line
-	var info_lbl = Label.new()
-	info_lbl.name = "InfoLabel"
-	info_lbl.size = Vector2(152, 14)
-	info_lbl.position = Vector2(-76, 22)
-	info_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var is_ = LabelSettings.new()
-	is_.font_size = 8
-	is_.font_color = Color(0.6, 0.65, 0.7, 0.9)
-	is_.outline_size = 1
-	is_.outline_color = Color(0, 0, 0, 0.5)
-	info_lbl.label_settings = is_
-	panel.add_child(info_lbl)
+	# Model + perf line (right side of name row)
+	var perf_lbl = Label.new()
+	perf_lbl.name = "PerfLabel"
+	perf_lbl.size = Vector2(card_w - 8, 14)
+	perf_lbl.position = Vector2(-card_w / 2.0 + 6, 19)
+	var ps = LabelSettings.new()
+	ps.font_size = 7
+	ps.font_color = Color(0.55, 0.6, 0.65, 0.9)
+	ps.outline_size = 1
+	ps.outline_color = Color(0, 0, 0, 0.5)
+	perf_lbl.label_settings = ps
+	panel.add_child(perf_lbl)
 
-	# Status line
-	var status_lbl = Label.new()
-	status_lbl.name = "StatusLabel"
-	status_lbl.size = Vector2(152, 14)
-	status_lbl.position = Vector2(-76, 36)
-	status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var ss = LabelSettings.new()
-	ss.font_size = 8
-	ss.font_color = Color(0.4, 0.8, 0.5, 0.9)
-	ss.outline_size = 1
-	ss.outline_color = Color(0, 0, 0, 0.5)
-	status_lbl.label_settings = ss
-	panel.add_child(status_lbl)
+	# Current activity line — what the worker is doing right now
+	var activity_lbl = Label.new()
+	activity_lbl.name = "ActivityLabel"
+	activity_lbl.size = Vector2(card_w - 12, 14)
+	activity_lbl.position = Vector2(-card_w / 2.0 + 6, 34)
+	var as_ = LabelSettings.new()
+	as_.font_size = 8
+	as_.font_color = Color(0.4, 0.8, 0.5, 0.9)
+	as_.outline_size = 1
+	as_.outline_color = Color(0, 0, 0, 0.5)
+	activity_lbl.label_settings = as_
+	panel.add_child(activity_lbl)
 
-	# Job blocks container
+	# Separator
+	var sep = ColorRect.new()
+	sep.size = Vector2(card_w - 16, 1)
+	sep.position = Vector2(-card_w / 2.0 + 8, 50)
+	sep.color = Color(0.2, 0.85, 0.95, 0.15)
+	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(sep)
+
+	# Job blocks container — sits below separator
 	var job_container = Node2D.new()
 	job_container.name = "JobBlocks"
 	job_container.position = Vector2(0, 54)
@@ -474,88 +486,94 @@ func _update_worker_home(worker_id: String) -> void:
 	var panel = _worker_home_panels[worker_id]
 	var worker_data = WorldState.workers.get(worker_id, {})
 	var name_lbl = panel.get_node_or_null("NameLabel")
-	var info_lbl = panel.get_node_or_null("InfoLabel")
-	var status_lbl = panel.get_node_or_null("StatusLabel")
+	var perf_lbl = panel.get_node_or_null("PerfLabel")
+	var activity_lbl = panel.get_node_or_null("ActivityLabel")
+	var top_border = panel.get_node_or_null("TopBorder")
 	var job_container = panel.get_node_or_null("JobBlocks")
+
+	var active = worker_data.get("activeJobs", 0)
+	var completed_hr = worker_data.get("completedLastHour", 0)
+	var status = worker_data.get("status", "online")
+	var card_w = 180
 
 	# Worker display name
 	if name_lbl:
 		name_lbl.text = worker_data.get("name", worker_id.left(12))
 
-	# Extract primary model
-	if info_lbl:
-		var model_name = ""
-		var caps = worker_data.get("capabilities", [])
-		for cap in caps:
-			var cap_str = ""
-			if cap is Dictionary:
-				cap_str = str(cap.get("id", ""))
+	# Model + performance line
+	if perf_lbl:
+		var model_name = _extract_model_name(worker_data)
+		perf_lbl.text = "%s  •  %d/hr" % [model_name, completed_hr]
+
+	# Gather this worker's actual jobs
+	var worker_jobs: Array = []
+	var worker_station_id = "station-" + worker_id
+	for jid in WorldState.jobs:
+		var job = WorldState.jobs[jid]
+		var job_state = job.get("state", "")
+		if job_state == "completed" or job_state == "cancelled" or job_state == "failed":
+			continue
+		var assigned = str(job.get("assignedAgentId", job.get("assignedAgent", "")))
+		var current_station = str(job.get("currentStationId", ""))
+		if assigned == worker_id or current_station == worker_station_id:
+			worker_jobs.append(job)
+
+	# Activity description — what are they doing right now
+	if activity_lbl:
+		if active > 0 and worker_jobs.size() > 0:
+			# Describe the primary job
+			var primary = worker_jobs[0]
+			var pri_state = str(primary.get("state", ""))
+			var title = _extract_job_title(str(primary.get("type", "")))
+			if pri_state == "processing":
+				activity_lbl.text = "▸ %s" % title
+				activity_lbl.label_settings.font_color = Color(0.3, 0.95, 1.0, 0.95)
 			else:
-				cap_str = str(cap)
-			var c = cap_str.to_lower()
-			if "embed" in c:
-				continue
-			if "gpt" in c or "claude" in c or "llama" in c or "gemini" in c or "mistral" in c or "qwen" in c or "deepseek" in c or "gemma" in c or "nemotron" in c:
-				for prefix in ["openai/", "anthropic/", "google/", "meta/", "mistralai/", "qwen/", "deepseek-ai/", "nvidia/"]:
-					cap_str = cap_str.replace(prefix, "")
-				model_name = cap_str.left(20)
-				break
-		info_lbl.text = model_name if model_name != "" else "no model"
-
-	# Status + jobs/hr
-	if status_lbl:
-		var active = worker_data.get("activeJobs", 0)
-		var completed_hr = worker_data.get("completedLastHour", 0)
-		var status = worker_data.get("status", "online")
-		if active > 0:
-			status_lbl.text = "%d active | %d/hr" % [active, completed_hr]
-			status_lbl.label_settings.font_color = Color(0.2, 0.85, 0.95, 0.9)
-		elif status == "working":
-			status_lbl.text = "working | %d/hr" % completed_hr
-			status_lbl.label_settings.font_color = Color(0.4, 0.8, 0.5, 0.9)
+				activity_lbl.text = "◦ %s" % title
+				activity_lbl.label_settings.font_color = Color(0.6, 0.8, 0.85, 0.8)
+		elif status == "working" or active > 0:
+			activity_lbl.text = "▸ processing..."
+			activity_lbl.label_settings.font_color = Color(0.3, 0.95, 1.0, 0.9)
 		else:
-			status_lbl.text = "idle | %d/hr" % completed_hr
-			status_lbl.label_settings.font_color = Color(0.5, 0.5, 0.55, 0.7)
+			activity_lbl.text = "— idle"
+			activity_lbl.label_settings.font_color = Color(0.5, 0.5, 0.55, 0.6)
 
-	# Build job blocks — show assigned/processing jobs for this worker
+	# Border color reflects state
+	if top_border:
+		if active > 0:
+			top_border.color = Color(0.2, 0.85, 0.95, 0.8)
+		elif status == "working":
+			top_border.color = Color(0.4, 0.8, 0.5, 0.6)
+		else:
+			top_border.color = Color(0.3, 0.35, 0.4, 0.4)
+
+	# Build job blocks — show each assigned job with real title
 	if job_container:
-		# Clear old blocks
 		for child in job_container.get_children():
 			child.queue_free()
 
-		var worker_jobs: Array = []
-		var worker_station_id = "station-" + worker_id
-		for jid in WorldState.jobs:
-			var job = WorldState.jobs[jid]
-			var job_state = job.get("state", "")
-			if job_state == "completed" or job_state == "cancelled" or job_state == "failed":
-				continue
-			var assigned = str(job.get("assignedAgent", ""))
-			var current_station = str(job.get("currentStationId", ""))
-			if assigned == worker_id or current_station == worker_station_id:
-				worker_jobs.append(job)
-		# Limit to 4 visible blocks
 		var visible_count = mini(worker_jobs.size(), 4)
-		var block_h = 14
+		var block_h = 26
 		var block_gap = 2
-		var block_w = 148
+		var block_w = card_w - 12
 
-		# Job type colors
-		var type_colors = {
-			"llm": Color(0.64, 0.48, 1.0, 0.7),
-			"code": Color(0.36, 0.55, 1.0, 0.7),
-			"tool": Color(0.34, 0.78, 0.71, 0.7),
-			"supervisor": Color(0.85, 0.69, 0.36, 0.7),
-			"review": Color(0.85, 0.69, 0.36, 0.7),
+		# State colors for the accent bar
+		var state_colors = {
+			"processing": Color(0.3, 0.95, 1.0, 0.9),
+			"queued": Color(0.5, 0.55, 0.6, 0.5),
+			"created": Color(0.5, 0.55, 0.6, 0.5),
+			"assigned": Color(0.6, 0.8, 0.4, 0.7),
 		}
-		var default_color = Color(0.39, 0.84, 0.90, 0.7)
+		var default_state_color = Color(0.39, 0.84, 0.90, 0.5)
 
 		for i in visible_count:
 			var job = worker_jobs[i]
-			var job_type = str(job.get("type", ""))
 			var job_state = str(job.get("state", "queued"))
 			var job_id = str(job.get("id", ""))
 			var short_id = job_id.left(8) if job_id.length() > 8 else job_id
+			var raw_type = str(job.get("type", ""))
+			var title = _extract_job_title(raw_type)
+			var pri = str(job.get("priority", "normal"))
 
 			var block = Node2D.new()
 			block.position = Vector2(0, i * (block_h + block_gap))
@@ -564,12 +582,12 @@ func _update_worker_home(worker_id: String) -> void:
 			var block_bg = ColorRect.new()
 			block_bg.size = Vector2(block_w, block_h)
 			block_bg.position = Vector2(-block_w / 2.0, 0)
-			block_bg.color = Color(0.08, 0.10, 0.16, 0.9)
+			block_bg.color = Color(0.06, 0.08, 0.13, 0.95)
 			block_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			block.add_child(block_bg)
 
-			# Left color accent bar
-			var accent_color = type_colors.get(job_type, default_color)
+			# Left accent bar — color by state
+			var accent_color = state_colors.get(job_state, default_state_color)
 			var accent_bar = ColorRect.new()
 			accent_bar.size = Vector2(3, block_h)
 			accent_bar.position = Vector2(-block_w / 2.0, 0)
@@ -577,30 +595,102 @@ func _update_worker_home(worker_id: String) -> void:
 			accent_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			block.add_child(accent_bar)
 
-			# Job label
-			var job_lbl = Label.new()
-			job_lbl.size = Vector2(block_w - 8, block_h)
-			job_lbl.position = Vector2(-block_w / 2.0 + 6, 0)
-			job_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			var js = LabelSettings.new()
-			js.font_size = 7
-			js.font_color = Color(0.8, 0.82, 0.85, 0.9)
-			js.outline_size = 1
-			js.outline_color = Color(0, 0, 0, 0.5)
-			job_lbl.label_settings = js
-			# Show type + short ID + state
-			var display_type = job_type.left(10) if job_type.length() > 10 else job_type
-			job_lbl.text = "%s  %s  %s" % [display_type, short_id, job_state]
-			block.add_child(job_lbl)
+			# Job title — first row
+			var title_lbl = Label.new()
+			title_lbl.size = Vector2(block_w - 10, 14)
+			title_lbl.position = Vector2(-block_w / 2.0 + 7, 1)
+			title_lbl.clip_text = true
+			var ts = LabelSettings.new()
+			ts.font_size = 7
+			ts.font_color = Color(0.85, 0.87, 0.9, 0.95)
+			ts.outline_size = 1
+			ts.outline_color = Color(0, 0, 0, 0.5)
+			title_lbl.label_settings = ts
+			title_lbl.text = title
+			block.add_child(title_lbl)
+
+			# State + priority + ID — second row
+			var meta_lbl = Label.new()
+			meta_lbl.size = Vector2(block_w - 10, 12)
+			meta_lbl.position = Vector2(-block_w / 2.0 + 7, 13)
+			meta_lbl.clip_text = true
+			var ms = LabelSettings.new()
+			ms.font_size = 6
+			ms.outline_size = 1
+			ms.outline_color = Color(0, 0, 0, 0.5)
+			# Color the state text
+			if job_state == "processing":
+				ms.font_color = Color(0.3, 0.9, 0.95, 0.8)
+			else:
+				ms.font_color = Color(0.5, 0.55, 0.6, 0.7)
+			meta_lbl.label_settings = ms
+			var pri_text = ""
+			if pri == "critical":
+				pri_text = " CRIT"
+			elif pri == "high":
+				pri_text = " HI"
+			meta_lbl.text = "%s  %s%s" % [job_state.to_upper(), short_id, pri_text]
+			block.add_child(meta_lbl)
 
 			job_container.add_child(block)
 
-		# Resize card background to fit job blocks
+		# If more jobs than shown
+		if worker_jobs.size() > 4:
+			var more = Node2D.new()
+			more.position = Vector2(0, visible_count * (block_h + block_gap))
+			var more_lbl = Label.new()
+			more_lbl.size = Vector2(block_w, 12)
+			more_lbl.position = Vector2(-block_w / 2.0, 0)
+			more_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			var more_s = LabelSettings.new()
+			more_s.font_size = 6
+			more_s.font_color = Color(0.5, 0.55, 0.6, 0.6)
+			more_lbl.label_settings = more_s
+			more_lbl.text = "+%d more" % (worker_jobs.size() - 4)
+			more.add_child(more_lbl)
+			job_container.add_child(more)
+
+		# Resize card background to fit
 		var card_bg = panel.get_node_or_null("CardBG")
 		if card_bg:
-			var base_height = 56
+			var base_height = 58
 			var jobs_height = visible_count * (block_h + block_gap)
-			card_bg.size.y = base_height + jobs_height + 8
+			if worker_jobs.size() > 4:
+				jobs_height += 14
+			card_bg.size.y = base_height + jobs_height + 6
+
+
+func _extract_model_name(worker_data: Dictionary) -> String:
+	var caps = worker_data.get("capabilities", [])
+	for cap in caps:
+		var cap_str = ""
+		if cap is Dictionary:
+			cap_str = str(cap.get("id", ""))
+		else:
+			cap_str = str(cap)
+		var c = cap_str.to_lower()
+		if "embed" in c:
+			continue
+		if "gpt" in c or "claude" in c or "llama" in c or "gemini" in c or "mistral" in c or "qwen" in c or "deepseek" in c or "gemma" in c or "nemotron" in c:
+			for prefix in ["openai/", "anthropic/", "google/", "meta/", "mistralai/", "qwen/", "deepseek-ai/", "nvidia/"]:
+				cap_str = cap_str.replace(prefix, "")
+			return cap_str.left(18)
+	return "no model"
+
+
+func _extract_job_title(raw: String) -> String:
+	var lines = raw.split("\n")
+	for line in lines:
+		var trimmed = line.strip_edges()
+		if trimmed.begins_with("# "):
+			return trimmed.substr(2).left(30)
+		if trimmed.begins_with("## "):
+			return trimmed.substr(3).left(30)
+	for line in lines:
+		var trimmed = line.strip_edges()
+		if trimmed != "" and trimmed.length() > 3:
+			return trimmed.left(30)
+	return "Unknown Job"
 
 
 # ---------------------------------------------------------------------------
@@ -648,11 +738,11 @@ func _distribute_jobs() -> void:
 # ---------------------------------------------------------------------------
 
 func _auto_fit_camera() -> void:
-	# Include worker cards on the right (extends ~200px past output-dock)
-	var city_w = 1600.0
-	var city_h = 900.0
-	# Shift center slightly right to account for worker panel
-	var center = Vector2(80.0, 0.0)
+	# Include 2x2 worker grid on the right
+	var city_w = 1800.0
+	var city_h = 750.0
+	# Shift center right to account for worker grid
+	var center = Vector2(120.0, 0.0)
 
 	var viewport_size = get_viewport().get_visible_rect().size
 	var padding = 20.0
