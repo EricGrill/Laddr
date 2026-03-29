@@ -1,20 +1,19 @@
 node: bitlay
 worker_id: venice-01
 
-llm:
-  provider: venice
-  endpoint: https://api.venice.ai/v1
-  api_key: ${VENICE_API_KEY}
-
-models:
-  - id: llama-3.3-70b
-    provider: venice
-    context_window: 131072
-    loaded: true
-  - id: deepseek-r1-32b
-    provider: venice
-    context_window: 65536
-    loaded: true
+cloud_providers:
+  - name: venice
+    endpoint: https://api.venice.ai/v1
+    api_key: ${VENICE_API_KEY}
+    models:
+      - id: llama-3.3-70b
+        provider: venice
+        context_window: 131072
+        loaded: true
+      - id: deepseek-r1-32b
+        provider: venice
+        context_window: 65536
+        loaded: true
 
 mcps: []
 skills: []
