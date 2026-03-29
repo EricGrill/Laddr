@@ -25,4 +25,5 @@ if [[ ! -f "$BOOTSTRAP" ]]; then
 fi
 
 echo "Starting Codex agent worker (codex-agent-01)..."
-codex --prompt-file "$BOOTSTRAP"
+# codex exec reads prompt from stdin, runs non-interactively with full disk access
+codex exec --sandbox danger-full-access < "$BOOTSTRAP"
