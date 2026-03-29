@@ -59,12 +59,29 @@ func _ready() -> void:
 	_label.label_settings = lbl_settings
 	add_child(_label)
 
-	# Carried packet (hidden until carrying)
-	_carried_packet = ColorRect.new()
-	_carried_packet.size = Vector2(12, 10)
-	_carried_packet.position = Vector2(-6, -35)
-	_carried_packet.color = PACKET_COLORS[0]
+	# Carried packet — visible crate with border
+	_carried_packet = Node2D.new()
+	_carried_packet.position = Vector2(0, -42)
 	_carried_packet.visible = false
+	var crate_bg = ColorRect.new()
+	crate_bg.name = "CrateBG"
+	crate_bg.size = Vector2(22, 18)
+	crate_bg.position = Vector2(-11, -9)
+	crate_bg.color = PACKET_COLORS[0]
+	crate_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_carried_packet.add_child(crate_bg)
+	var crate_border = ColorRect.new()
+	crate_border.size = Vector2(22, 2)
+	crate_border.position = Vector2(-11, -9)
+	crate_border.color = Color(1, 1, 1, 0.4)
+	crate_border.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_carried_packet.add_child(crate_border)
+	var crate_stripe = ColorRect.new()
+	crate_stripe.size = Vector2(2, 18)
+	crate_stripe.position = Vector2(-1, -9)
+	crate_stripe.color = Color(1, 1, 1, 0.25)
+	crate_stripe.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_carried_packet.add_child(crate_stripe)
 	add_child(_carried_packet)
 
 	# Status card
@@ -128,8 +145,9 @@ func _find_station_positions() -> void:
 
 func _on_job_changed(_job_id: String) -> void:
 	_jobs_scanned += 1
-	# Start a trip if idle and there are queued jobs
-	if _state == State.IDLE:
+	# Only start moving if there are actual queued jobs
+	var queued = WorldState.metrics.get("realQueueDepth", 0)
+	if _state == State.IDLE and queued > 0:
 		_start_trip()
 
 
@@ -145,30 +163,52 @@ func _start_trip() -> void:
 func _update_stats() -> void:
 	var queued = WorldState.metrics.get("realQueueDepth", 0)
 	var overflow = WorldState.metrics.get("overflowActive", false)
+	var processing = _count_processing()
 
 	var lines = []
-	if overflow:
-		lines.append("OVERFLOW ACTIVE")
-	elif queued > 0:
-		lines.append("SCANNING QUEUE")
-		lines.append("Total: %d jobs" % queued)
-	else:
-		lines.append("QUEUE CLEAR")
-		lines.append("Standing by...")
 
-	# Show current job info if carrying
-	if _state == State.WALKING_TO_DISPATCH or _state == State.DROPPING_OFF:
-		var job_name = _get_current_job_name()
-		if job_name != "":
-			lines.append(job_name)
+	var throughput = WorldState.metrics.get("throughput", {})
+	var done_hr = throughput.get("completed", {}).get("1h", 0)
 
-	lines.append("Q:%d | Run:%d" % [queued, _count_processing()])
-	lines.append("Workers: %d online" % WorldState.workers.size())
+	match _state:
+		State.WALKING_TO_INTAKE:
+			lines.append("FETCHING JOB")
+			var job_name = _get_current_job_name()
+			if job_name != "":
+				lines.append(job_name)
+			lines.append("Q:%d | %d/hr" % [queued, done_hr])
+		State.PICKING_UP:
+			lines.append("PICKING UP")
+			var job_name = _get_current_job_name()
+			if job_name != "":
+				lines.append(job_name)
+			lines.append("Q:%d remaining" % queued)
+		State.WALKING_TO_DISPATCH:
+			lines.append("DELIVERING")
+			var job_name = _get_current_job_name()
+			if job_name != "":
+				lines.append(job_name)
+			lines.append("Q:%d | Run:%d | %d/hr" % [queued, processing, done_hr])
+		State.DROPPING_OFF:
+			lines.append("DISPATCHING")
+			lines.append("Q:%d | %d/hr" % [queued, done_hr])
+		_:
+			if overflow:
+				lines.append("OVERFLOW ACTIVE")
+				var spend = WorldState.metrics.get("dailyVeniceSpend", 0.0)
+				lines.append("Venice: $%.2f" % spend)
+				lines.append("Q:%d | %d/hr" % [queued, done_hr])
+			elif queued > 0:
+				lines.append("SCANNING QUEUE")
+				lines.append("Q:%d | %d/hr" % [queued, done_hr])
+			else:
+				lines.append("QUEUE CLEAR")
+				lines.append("%d/hr | %d workers" % [done_hr, WorldState.workers.size()])
+
 	_status_text.text = "\n".join(lines)
 
-	# Keep moving if there are jobs
+	# Only move when there are actual jobs in queue
 	if queued > 0 and _state == State.IDLE:
-		_idle_timer = 0
 		_start_trip()
 
 
@@ -233,7 +273,9 @@ func _process(delta: float) -> void:
 			_sprite.rotation = sin(Time.get_ticks_msec() / 100.0) * 0.12
 			if _action_timer <= 0.3 and not _carried_packet.visible:
 				_carried_packet.visible = true
-				_carried_packet.color = PACKET_COLORS[_trips_completed % PACKET_COLORS.size()]
+				var crate = _carried_packet.get_node_or_null("CrateBG")
+				if crate:
+					crate.color = PACKET_COLORS[_trips_completed % PACKET_COLORS.size()]
 			if _action_timer <= 0:
 				_sprite.rotation = 0
 				_state = State.WALKING_TO_DISPATCH
@@ -248,7 +290,7 @@ func _process(delta: float) -> void:
 				_set_facing("iso_right")
 			# Walk bob with packet
 			_sprite.position.y = sin(Time.get_ticks_msec() / 200.0) * 1.5
-			_carried_packet.position.y = -35 + sin(Time.get_ticks_msec() / 200.0) * 1.5
+			_carried_packet.position.y = -42 + sin(Time.get_ticks_msec() / 200.0) * 1.5
 			if global_position.distance_to(_dispatch_pos) < 10:
 				global_position = _dispatch_pos
 				_state = State.DROPPING_OFF
