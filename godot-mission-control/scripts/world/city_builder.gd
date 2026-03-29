@@ -21,9 +21,9 @@ const TYPE_TO_GRID_CELL = {
 }
 
 const DISTRICT_LABELS = {
-	"docks": {"text": "THE DOCKS", "color": Color(0.91, 0.66, 0.49), "pos": Vector2(-480, -220)},
-	"downtown": {"text": "DOWNTOWN", "color": Color(0.2, 1.0, 1.0), "pos": Vector2(0, -220)},
-	"shipyard": {"text": "SHIPYARD", "color": Color(0.51, 0.88, 0.67), "pos": Vector2(420, -220)},
+	"docks": {"text": "THE DOCKS", "color": Color(0.91, 0.66, 0.49), "pos": Vector2(-480, -280)},
+	"downtown": {"text": "DOWNTOWN", "color": Color(0.2, 1.0, 1.0), "pos": Vector2(0, -280)},
+	"shipyard": {"text": "SHIPYARD", "color": Color(0.51, 0.88, 0.67), "pos": Vector2(420, -280)},
 }
 
 var roads: RoadSystem = RoadSystem.new()
@@ -53,6 +53,7 @@ func _ready() -> void:
 	WorldState.snapshot_loaded.connect(_on_snapshot_loaded)
 	WorldState.worker_changed.connect(_on_worker_changed)
 	WorldState.worker_removed.connect(_on_worker_removed)
+	WorldState.metrics_changed.connect(_on_metrics_changed)
 
 
 # ---------------------------------------------------------------------------
@@ -75,8 +76,8 @@ func _draw_city_background() -> void:
 	var bg = ColorRect.new()
 	bg.name = "CityBackground"
 	bg.z_index = -10
-	bg.size = Vector2(1400, 600)
-	bg.position = Vector2(-700, -300)
+	bg.size = Vector2(1400, 700)
+	bg.position = Vector2(-700, -350)
 	bg.color = Color(0.02, 0.02, 0.05, 1.0)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
@@ -125,12 +126,12 @@ func _draw_roads() -> void:
 		road_layer.add_child(dash)
 		x += dash_w + dash_gap
 
-	# --- 4 side streets: vertical rects 12px wide, from y=-180 to y=180 ---
+	# --- 4 side streets: vertical rects 12px wide, from y=-220 to y=220 ---
 	var side_street_xs = [-420, -180, 180, 360]
 	for sx in side_street_xs:
 		var street = ColorRect.new()
-		street.size = Vector2(12, 360)
-		street.position = Vector2(sx - 6, -180)
+		street.size = Vector2(12, 440)
+		street.position = Vector2(sx - 6, -220)
 		street.color = Color(0.06, 0.06, 0.10, 1.0)
 		street.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		road_layer.add_child(street)
@@ -138,8 +139,8 @@ func _draw_roads() -> void:
 		# Subtle left/right edge glow
 		for edge_offset in [-6, 6]:
 			var edge = ColorRect.new()
-			edge.size = Vector2(1, 360)
-			edge.position = Vector2(sx + edge_offset - 1, -180)
+			edge.size = Vector2(1, 440)
+			edge.position = Vector2(sx + edge_offset - 1, -220)
 			edge.color = Color(0.0, 1.0, 1.0, 0.10)
 			edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			road_layer.add_child(edge)
@@ -291,29 +292,26 @@ func _spawn_building(station_id: String, data: Dictionary, pos: Vector2) -> void
 
 
 func _register_worker_stations() -> void:
+	# Collect worker stations and sort for consistent ordering
+	var worker_stations: Array[String] = []
 	for station_id in WorldState.stations:
-		# Skip stations already placed as fixed buildings
 		if GRID_STATIONS.has(station_id):
 			continue
-		# Only handle worker stations: "station-<workerId>"
 		if not station_id.begins_with("station-"):
 			continue
+		worker_stations.append(station_id)
+	worker_stations.sort()
 
-		var data = WorldState.stations[station_id]
-		var worker_type = data.get("type", "")
-		var parent_id = TYPE_TO_GRID_CELL.get(worker_type, "research")
-		var parent_pos = roads.get_position(parent_id)
-		if parent_pos == Vector2.ZERO:
-			parent_pos = roads.get_position("research")
+	# Position worker stations in a vertical column on the right side
+	var base_pos = roads.get_position("output-dock")
+	if base_pos == Vector2.ZERO:
+		base_pos = Vector2(420, -160)
+	var start_x = base_pos.x + 180  # Right of the output dock
+	var start_y = -200
 
-		# Stack workers within their parent building area
-		var dock_idx = _worker_dock_counts.get(parent_id, 0)
-		_worker_dock_counts[parent_id] = dock_idx + 1
-		var offset = Vector2(
-			-40 + (dock_idx % 3) * 40,
-			60 + (dock_idx / 3) * 40,
-		)
-		var worker_pos = parent_pos + offset
+	for i in worker_stations.size():
+		var station_id = worker_stations[i]
+		var worker_pos = Vector2(start_x, start_y + i * 100)
 		roads._positions[station_id] = worker_pos
 
 
@@ -342,11 +340,11 @@ func _spawn_triage_droid() -> void:
 	_triage_droid.name = "TriageDroid"
 	_triage_droid.set_script(script)
 	var intake_pos = roads.get_position("intake")
-	var dispatch_pos = roads.get_position("dispatcher")
-	if intake_pos != Vector2.ZERO and dispatch_pos != Vector2.ZERO:
-		_triage_droid.position = (intake_pos + dispatch_pos) / 2 + Vector2(0, -15)
+	if intake_pos != Vector2.ZERO:
+		_triage_droid.position = intake_pos + Vector2(-60, 50)
 	else:
-		_triage_droid.position = Vector2(-480, 0)
+		_triage_droid.position = Vector2(-540, 50)
+	_triage_droid.scale = Vector2(0.7, 0.7)
 	_triage_droid.z_index = 10
 	add_child(_triage_droid)
 
@@ -354,6 +352,9 @@ func _spawn_triage_droid() -> void:
 # ---------------------------------------------------------------------------
 # Agent / citizen spawning
 # ---------------------------------------------------------------------------
+
+var _worker_home_panels: Dictionary = {}  # worker_id -> Node2D (info panel)
+var _worker_home_index: int = 0
 
 func _spawn_agent(worker_id: String) -> void:
 	if agent_nodes.has(worker_id):
@@ -370,17 +371,137 @@ func _spawn_agent(worker_id: String) -> void:
 	var color_index = worker_id.hash() % colors.size()
 	citizen.setup(worker_id, roads, colors[color_index])
 
-	# Position at worker's station, or fall back to research building
+	# Position at worker's home station
 	var worker_station_id = "station-" + worker_id
 	var start_pos = roads.get_position(worker_station_id)
 	if start_pos == Vector2.ZERO:
 		start_pos = roads.get_position("research")
 	if start_pos == Vector2.ZERO:
-		start_pos = Vector2(-120, -120)
+		start_pos = Vector2(-120, -160)
 	citizen.position = start_pos
 
 	add_child(citizen)
 	agent_nodes[worker_id] = citizen
+
+	# Create home info panel for this worker
+	_create_worker_home(worker_id, start_pos)
+
+
+func _create_worker_home(worker_id: String, pos: Vector2) -> void:
+	var panel = Node2D.new()
+	panel.position = pos + Vector2(0, 35)
+	panel.z_index = 8
+
+	# Background card
+	var bg = ColorRect.new()
+	bg.size = Vector2(140, 52)
+	bg.position = Vector2(-70, 0)
+	bg.color = Color(0.04, 0.06, 0.10, 0.92)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(bg)
+
+	# Top border accent
+	var border = ColorRect.new()
+	border.size = Vector2(140, 2)
+	border.position = Vector2(-70, 0)
+	border.color = Color(0.2, 0.85, 0.95, 0.6)
+	border.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(border)
+
+	# Worker name
+	var name_lbl = Label.new()
+	name_lbl.name = "NameLabel"
+	name_lbl.size = Vector2(136, 16)
+	name_lbl.position = Vector2(-68, 3)
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var ns = LabelSettings.new()
+	ns.font_size = 10
+	ns.font_color = Color(0.3, 0.95, 1.0, 1.0)
+	ns.outline_size = 1
+	ns.outline_color = Color(0, 0, 0, 0.6)
+	name_lbl.label_settings = ns
+	panel.add_child(name_lbl)
+
+	# Model + stats line
+	var info_lbl = Label.new()
+	info_lbl.name = "InfoLabel"
+	info_lbl.size = Vector2(136, 14)
+	info_lbl.position = Vector2(-68, 18)
+	info_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var is_ = LabelSettings.new()
+	is_.font_size = 8
+	is_.font_color = Color(0.6, 0.65, 0.7, 0.9)
+	is_.outline_size = 1
+	is_.outline_color = Color(0, 0, 0, 0.5)
+	info_lbl.label_settings = is_
+	panel.add_child(info_lbl)
+
+	# Status line
+	var status_lbl = Label.new()
+	status_lbl.name = "StatusLabel"
+	status_lbl.size = Vector2(136, 14)
+	status_lbl.position = Vector2(-68, 33)
+	status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var ss = LabelSettings.new()
+	ss.font_size = 7
+	ss.font_color = Color(0.4, 0.8, 0.5, 0.9)
+	ss.outline_size = 1
+	ss.outline_color = Color(0, 0, 0, 0.5)
+	status_lbl.label_settings = ss
+	panel.add_child(status_lbl)
+
+	add_child(panel)
+	_worker_home_panels[worker_id] = panel
+	_update_worker_home(worker_id)
+
+
+func _update_worker_home(worker_id: String) -> void:
+	if not _worker_home_panels.has(worker_id):
+		return
+	var panel = _worker_home_panels[worker_id]
+	var worker_data = WorldState.workers.get(worker_id, {})
+	var name_lbl = panel.get_node_or_null("NameLabel")
+	var info_lbl = panel.get_node_or_null("InfoLabel")
+	var status_lbl = panel.get_node_or_null("StatusLabel")
+
+	# Worker display name
+	if name_lbl:
+		name_lbl.text = worker_data.get("name", worker_id.left(12))
+
+	# Extract primary model
+	if info_lbl:
+		var model_name = ""
+		var caps = worker_data.get("capabilities", [])
+		for cap in caps:
+			var cap_str = ""
+			if cap is Dictionary:
+				cap_str = str(cap.get("id", ""))
+			else:
+				cap_str = str(cap)
+			var c = cap_str.to_lower()
+			if "embed" in c:
+				continue
+			if "gpt" in c or "claude" in c or "llama" in c or "gemini" in c or "mistral" in c or "qwen" in c or "deepseek" in c or "gemma" in c or "nemotron" in c:
+				for prefix in ["openai/", "anthropic/", "google/", "meta/", "mistralai/", "qwen/", "deepseek-ai/", "nvidia/"]:
+					cap_str = cap_str.replace(prefix, "")
+				model_name = cap_str.left(20)
+				break
+		info_lbl.text = model_name if model_name != "" else "no model"
+
+	# Status + jobs/hr
+	if status_lbl:
+		var active = worker_data.get("activeJobs", 0)
+		var completed_hr = worker_data.get("completedLastHour", 0)
+		var status = worker_data.get("status", "online")
+		if active > 0:
+			status_lbl.text = "%d active | %d/hr" % [active, completed_hr]
+			status_lbl.label_settings.font_color = Color(0.2, 0.85, 0.95, 0.9)
+		elif status == "working":
+			status_lbl.text = "working | %d/hr" % completed_hr
+			status_lbl.label_settings.font_color = Color(0.4, 0.8, 0.5, 0.9)
+		else:
+			status_lbl.text = "idle | %d/hr" % completed_hr
+			status_lbl.label_settings.font_color = Color(0.5, 0.5, 0.55, 0.7)
 
 
 # ---------------------------------------------------------------------------
@@ -429,7 +550,7 @@ func _distribute_jobs() -> void:
 
 func _auto_fit_camera() -> void:
 	var city_w = 1400.0
-	var city_h = 700.0
+	var city_h = 800.0
 	var center = Vector2(0.0, 0.0)
 
 	var viewport_size = get_viewport().get_visible_rect().size
@@ -451,12 +572,22 @@ func _auto_fit_camera() -> void:
 # Signal handlers
 # ---------------------------------------------------------------------------
 
+func _on_metrics_changed() -> void:
+	for wid in _worker_home_panels:
+		_update_worker_home(wid)
+
+
 func _on_worker_changed(worker_id: String, is_new: bool) -> void:
 	if is_new:
 		_spawn_agent(worker_id)
+	else:
+		_update_worker_home(worker_id)
 
 
 func _on_worker_removed(worker_id: String) -> void:
+	if _worker_home_panels.has(worker_id):
+		_worker_home_panels[worker_id].queue_free()
+		_worker_home_panels.erase(worker_id)
 	if agent_nodes.has(worker_id):
 		agent_nodes[worker_id].queue_free()
 		agent_nodes.erase(worker_id)
