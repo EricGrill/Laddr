@@ -3016,6 +3016,7 @@ async def claim_agent_job(
     agent_id: str,
     skills: str = "",  # comma-separated skills to match
     limit: int = 1,
+    explicit_only: bool = False,  # only claim jobs with matching agent_type
 ):
     """Claim the next job(s) matching this agent's skills.
 
@@ -3070,14 +3071,18 @@ async def claim_agent_job(
                 required_skills = job_reqs.get("skills", [])
                 agent_type = job_reqs.get("agent_type", "")
 
-                # Match: no skill requirement (generic), or agent has required skill,
-                # or agent_type matches agent_id
-                matches = (
-                    (not required_skills and not agent_type)  # generic job
-                    or (agent_type and agent_type in agent_id)  # agent_type match
-                    or (required_skills and any(s in skill_list for s in required_skills))  # skill match
-                    or (not required_skills and skill_list)  # agent with skills takes generic
-                )
+                # Match logic depends on explicit_only mode:
+                # - explicit_only=True: ONLY claim jobs with agent_type matching this agent
+                # - explicit_only=False (default): original broad matching
+                if explicit_only:
+                    matches = agent_type and agent_type in agent_id
+                else:
+                    matches = (
+                        (not required_skills and not agent_type)  # generic job
+                        or (agent_type and agent_type in agent_id)  # agent_type match
+                        or (required_skills and any(s in skill_list for s in required_skills))  # skill match
+                        or (not required_skills and skill_list)  # agent with skills takes generic
+                    )
 
                 if matches:
                     # Lock the job to this agent

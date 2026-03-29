@@ -41,12 +41,16 @@ curl -s -X POST https://laddr.chainbytes.io/api/agent-workers/register \
 ### 2. Claim Jobs (poll every 5 seconds when idle)
 
 ```bash
-curl -s -X POST "https://laddr.chainbytes.io/api/agent-workers/claim?agent_id=codex-agent-01&limit=1" \
+curl -s -X POST "https://laddr.chainbytes.io/api/agent-workers/claim?agent_id=codex-agent-01&limit=1&explicit_only=true" \
   -H "X-API-Key: 628d73c47741dabd9d077d7df5ae4c05ffaada3a5fb5263f"
 ```
 
-If `claimed` array is empty, wait 5 seconds and try again. If a job is returned, read
+If `claimed` array is empty, wait 10 seconds and try again. If a job is returned, read
 the `system_prompt` and `user_prompt` fields — that is your task.
+
+**IMPORTANT:** You ONLY claim jobs explicitly targeted to you via `agent_type: "codex"`.
+Do NOT claim generic jobs. The `skills` filter in the claim URL ensures this — only
+jobs submitted with `"agent_type": "codex"` will be returned to you.
 
 ### 3. Do the Work
 

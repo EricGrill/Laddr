@@ -186,6 +186,11 @@ curl -s -X POST "https://laddr.chainbytes.io/api/agent-workers/claim?agent_id=cl
 # Claim with explicit skill filter
 curl -s -X POST "https://laddr.chainbytes.io/api/agent-workers/claim?agent_id=codex-01&skills=coding,refactoring&limit=3" \
   -H "X-API-Key: 628d73c47741dabd9d077d7df5ae4c05ffaada3a5fb5263f"
+
+# Claim ONLY jobs explicitly targeted to this agent (via agent_type)
+# Use for expensive agents like Codex that shouldn't pick up generic work
+curl -s -X POST "https://laddr.chainbytes.io/api/agent-workers/claim?agent_id=codex-agent-01&limit=1&explicit_only=true" \
+  -H "X-API-Key: 628d73c47741dabd9d077d7df5ae4c05ffaada3a5fb5263f"
 ```
 
 **Response:**
