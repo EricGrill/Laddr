@@ -331,7 +331,7 @@ async def _build_snapshot(deps: dict) -> dict:
             except Exception:
                 w["completedLastHour"] = 0
 
-        # Set status based on actual activity
+        # Set status + last job name
         for w in workers:
             if w["activeJobs"] > 0 or w.get("streamPending", 0) > 0:
                 w["status"] = "busy"
@@ -339,6 +339,12 @@ async def _build_snapshot(deps: dict) -> dict:
                 w["status"] = "working"
             else:
                 w["status"] = "online"
+            # Last completed job name
+            try:
+                last_job = await redis_client.get(f"laddr:worker_stats:{w['id']}:last_job")
+                w["lastJobName"] = last_job.decode() if isinstance(last_job, bytes) else (last_job or "")
+            except Exception:
+                w["lastJobName"] = ""
 
     dynamic_stations = [_build_station_from_worker(w) for w in raw_workers]
     stations = _fixed_stations() + dynamic_stations

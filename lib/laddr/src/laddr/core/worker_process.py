@@ -460,13 +460,19 @@ class WorkerProcess:
 
             logger.info("Job %s (%s) completed", job_id, task_type)
 
-            # Track per-worker completion count (hourly bucket, auto-expires)
+            # Track per-worker completion count + last job name
             try:
                 import time as _time
                 hour_bucket = int(_time.time() // 3600)
                 counter_key = f"laddr:worker_stats:{self.worker_id}:completed:{hour_bucket}"
                 await self._redis.incr(counter_key)
-                await self._redis.expire(counter_key, 7200)  # expire after 2 hours
+                await self._redis.expire(counter_key, 7200)
+                # Store last completed job name for Mission Control display
+                job_name = job.get("system_prompt", "")[:80] or job.get("prompt_name", "")[:80] or "unknown"
+                await self._redis.set(
+                    f"laddr:worker_stats:{self.worker_id}:last_job",
+                    job_name, ex=300,
+                )
             except Exception:
                 pass
         finally:

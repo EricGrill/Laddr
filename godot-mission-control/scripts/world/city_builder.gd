@@ -613,18 +613,15 @@ func _update_worker_home(worker_id: String) -> void:
 	# Activity description — what are they doing right now
 	if activity_lbl:
 		if active > 0 and worker_jobs.size() > 0:
-			# Describe the primary job
 			var primary = worker_jobs[0]
-			var pri_state = str(primary.get("state", ""))
 			var title = _extract_job_title(str(primary.get("type", "")))
-			if pri_state == "processing":
-				activity_lbl.text = "▸ %s" % title
-				activity_lbl.label_settings.font_color = Color(0.3, 0.95, 1.0, 0.95)
-			else:
-				activity_lbl.text = "◦ %s" % title
-				activity_lbl.label_settings.font_color = Color(0.6, 0.8, 0.85, 0.8)
-		elif status == "working" or active > 0:
-			activity_lbl.text = "▸ processing..."
+			activity_lbl.text = "▸ %s" % title
+			activity_lbl.label_settings.font_color = Color(0.3, 0.95, 1.0, 0.95)
+		elif status == "working":
+			# Fast workers: show last completed job name
+			var last_job = str(worker_data.get("lastJobName", ""))
+			var title = _extract_job_title(last_job) if last_job != "" else "processing..."
+			activity_lbl.text = "▸ %s" % title
 			activity_lbl.label_settings.font_color = Color(0.3, 0.95, 1.0, 0.9)
 		else:
 			activity_lbl.text = "— idle"
