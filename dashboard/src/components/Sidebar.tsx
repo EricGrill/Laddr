@@ -14,7 +14,7 @@ const navigation = [
   { name: 'Job Board', href: '/jobs-board', icon: Columns2 },
   { name: 'Services', href: '/services', icon: Layers },
   { name: 'Settings', href: '/settings', icon: Settings },
-  { name: 'Mission Control', href: '/godot-mc/', icon: Gauge, external: true },
+  { name: 'Mission Control', href: '/mission-control/', icon: Gauge, external: true },
 ];
 
 export default function Sidebar() {
