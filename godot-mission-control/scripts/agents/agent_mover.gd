@@ -65,11 +65,10 @@ func _physics_process(delta: float) -> void:
 			arrived.emit()
 		return
 
-	# Compute velocity — halve Y for isometric compensation (like goblin.gd)
+	# Compute velocity — straight orthogonal movement (no iso compensation)
 	var motion = direction.normalized()
 	velocity_direction = motion  # Raw direction for animation
-	motion.y /= 2.0  # Isometric aspect ratio compensation
-	motion = motion.normalized() * base_speed * speed_multiplier
+	motion = motion * base_speed * speed_multiplier
 
 	_body.velocity = motion
 	_body.move_and_slide()

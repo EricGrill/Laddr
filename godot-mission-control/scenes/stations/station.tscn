@@ -56,7 +56,7 @@ visible = false
 color = Color(1, 0.2, 0.2, 0.9)
 
 [node name="Sprite" type="Sprite2D" parent="."]
-scale = Vector2(0.6, 0.6)
+scale = Vector2(0.45, 0.45)
 
 [node name="Label" type="Label" parent="."]
 offset_left = -60.0

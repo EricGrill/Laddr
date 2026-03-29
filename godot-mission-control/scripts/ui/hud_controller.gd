@@ -1,6 +1,7 @@
 extends Control
 ## Top bar HUD showing connection status, live metrics, and kiosk toggle.
 
+@onready var title_label: Label = $VBoxContainer/HBoxContainer/TitleLabel
 @onready var connection_dot: ColorRect = $VBoxContainer/HBoxContainer/ConnectionDot
 @onready var connection_label: Label = $VBoxContainer/HBoxContainer/ConnectionLabel
 @onready var metrics_label: Label = $VBoxContainer/HBoxContainer/MetricsLabel
@@ -30,6 +31,12 @@ func _ready() -> void:
 	WorldState.metrics_changed.connect(_on_metrics_changed)
 	WorldState.snapshot_loaded.connect(_on_snapshot_loaded)
 	_on_connection_state_changed(WebSocketClient.connection_state)
+
+	if title_label:
+		var title_settings = LabelSettings.new()
+		title_settings.font_size = 18
+		title_settings.font_color = Color(0.2, 0.9, 1.0, 1.0)
+		title_label.label_settings = title_settings
 
 	if connection_dot:
 		connection_dot.pivot_offset = connection_dot.size / 2.0

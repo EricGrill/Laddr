@@ -28,6 +28,11 @@ layout_mode = 2
 offset_left = 12.0
 offset_right = -12.0
 
+[node name="TitleLabel" type="Label" parent="VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 4
+text = "DAYSTROM"
+
 [node name="ConnectionDot" type="ColorRect" parent="VBoxContainer/HBoxContainer"]
 custom_minimum_size = Vector2(12, 12)
 layout_mode = 2
