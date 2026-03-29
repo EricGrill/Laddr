@@ -2930,6 +2930,234 @@ async def list_model_aliases():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ---------------------------------------------------------------------------
+# Pull-based Agent Worker API
+# External AI agents (Claude Code, Codex, Kimi, etc.) register capabilities
+# and pull jobs matching their skills.
+# ---------------------------------------------------------------------------
+
+class AgentWorkerRegisterRequest(BaseModel):
+    agent_id: str  # e.g. "claude-code-01", "codex-prod", "kimi-reasoning"
+    name: str  # Display name
+    skills: list[str]  # e.g. ["code-review", "coding", "reasoning", "refactoring"]
+    models: list[str] = []  # e.g. ["claude-opus-4-6", "gpt-5.4"]
+    max_concurrent: int = 1
+    metadata: dict = {}
+
+
+class AgentJobCompleteRequest(BaseModel):
+    status: str = "completed"  # "completed" or "failed"
+    result: dict = {}
+
+
+@app.post("/api/agent-workers/register", dependencies=[require_api_key])
+async def register_agent_worker(request: AgentWorkerRegisterRequest):
+    """Register an external AI agent as a pull-based worker.
+
+    Unlike push workers (Mac minis), pull workers claim jobs on their own schedule.
+    Registration lasts 5 minutes — call periodically as a heartbeat.
+    """
+    import time as _t
+    try:
+        redis_client = await message_bus._get_client()
+        registration = {
+            "agent_id": request.agent_id,
+            "name": request.name,
+            "skills": request.skills,
+            "models": request.models,
+            "max_concurrent": request.max_concurrent,
+            "metadata": request.metadata,
+            "type": "pull",
+            "registered_at": _t.time(),
+            "last_heartbeat": _t.time(),
+        }
+        await redis_client.hset(
+            "laddr:agent-workers:registry",
+            request.agent_id,
+            json.dumps(registration),
+        )
+        # Set TTL via a separate expiry key
+        await redis_client.set(
+            f"laddr:agent-workers:alive:{request.agent_id}", "1", ex=300,
+        )
+        return {
+            "status": "registered",
+            "agent_id": request.agent_id,
+            "skills": request.skills,
+            "ttl_seconds": 300,
+            "message": "Call /api/agent-workers/register every 5 min as heartbeat.",
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/agent-workers", dependencies=[require_api_key])
+async def list_agent_workers():
+    """List all registered pull-based agent workers."""
+    import time as _t
+    try:
+        redis_client = await message_bus._get_client()
+        raw = await redis_client.hgetall("laddr:agent-workers:registry")
+        agents = []
+        for _id, data in raw.items():
+            agent = json.loads(data)
+            # Check if still alive
+            alive_key = f"laddr:agent-workers:alive:{agent['agent_id']}"
+            alive = await redis_client.exists(alive_key)
+            agent["alive"] = bool(alive)
+            agents.append(agent)
+        return {"agents": agents}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/agent-workers/claim", dependencies=[require_api_key])
+async def claim_agent_job(
+    agent_id: str,
+    skills: str = "",  # comma-separated skills to match
+    limit: int = 1,
+):
+    """Claim the next job(s) matching this agent's skills.
+
+    The agent specifies which skills it can handle. Jobs tagged with matching
+    requirements are returned and locked to this agent.
+
+    Returns empty list if no matching jobs available.
+    """
+    from laddr.core.message_bus import PRIORITY_LEVELS, priority_stream_key
+    import time as _t
+
+    skill_list = [s.strip() for s in skills.split(",") if s.strip()] if skills else []
+
+    try:
+        redis_client = await message_bus._get_client()
+
+        # If no skills specified, load from registration
+        if not skill_list:
+            reg_data = await redis_client.hget("laddr:agent-workers:registry", agent_id)
+            if reg_data:
+                reg = json.loads(reg_data)
+                skill_list = reg.get("skills", [])
+
+        claimed = []
+
+        # Scan priority streams for matching jobs
+        for priority in PRIORITY_LEVELS:
+            if len(claimed) >= limit:
+                break
+
+            stream = priority_stream_key(priority)
+            # Read from stream without consumer group
+            messages = await redis_client.xrange(stream, count=50)
+
+            for msg_id, fields in messages:
+                if len(claimed) >= limit:
+                    break
+
+                raw = fields.get("job", fields.get(b"job", "{}"))
+                if isinstance(raw, bytes):
+                    raw = raw.decode()
+                job = json.loads(raw)
+
+                # Check if job matches agent's skills
+                job_reqs = job.get("requirements", {})
+                if isinstance(job_reqs, str):
+                    try:
+                        job_reqs = json.loads(job_reqs)
+                    except Exception:
+                        job_reqs = {}
+
+                required_skills = job_reqs.get("skills", [])
+                agent_type = job_reqs.get("agent_type", "")
+
+                # Match: no skill requirement (generic), or agent has required skill,
+                # or agent_type matches agent_id
+                matches = (
+                    (not required_skills and not agent_type)  # generic job
+                    or (agent_type and agent_type in agent_id)  # agent_type match
+                    or (required_skills and any(s in skill_list for s in required_skills))  # skill match
+                    or (not required_skills and skill_list)  # agent with skills takes generic
+                )
+
+                if matches:
+                    # Lock the job to this agent
+                    job_id = job.get("job_id", "")
+                    lock_key = f"laddr:job-lock:{job_id}"
+                    locked = await redis_client.set(lock_key, agent_id, ex=600, nx=True)
+                    if not locked:
+                        continue  # Another agent claimed it
+
+                    # Remove from pending stream
+                    if isinstance(msg_id, bytes):
+                        msg_id = msg_id.decode()
+                    await redis_client.xdel(stream, msg_id)
+
+                    # Update DB status
+                    try:
+                        database.save_prompt_result(job_id, {"agent": agent_id, "status": "claimed"}, "running")
+                    except Exception:
+                        pass
+
+                    claimed.append({
+                        "job_id": job_id,
+                        "system_prompt": job.get("system_prompt", ""),
+                        "user_prompt": job.get("user_prompt", ""),
+                        "inputs": job.get("inputs", {}),
+                        "priority": job.get("priority", "normal"),
+                        "timeout_seconds": job.get("timeout_seconds", 300),
+                        "requirements": job_reqs,
+                        "created_at": job.get("created_at", ""),
+                    })
+
+        # Update heartbeat
+        await redis_client.set(f"laddr:agent-workers:alive:{agent_id}", "1", ex=300)
+
+        return {
+            "agent_id": agent_id,
+            "claimed": claimed,
+            "count": len(claimed),
+        }
+
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/agent-workers/{job_id}/result", dependencies=[require_api_key])
+async def submit_agent_result(job_id: str, request: AgentJobCompleteRequest):
+    """Submit the result of a claimed job."""
+    try:
+        redis_client = await message_bus._get_client()
+
+        # Verify lock
+        lock_key = f"laddr:job-lock:{job_id}"
+        locker = await redis_client.get(lock_key)
+
+        # Store result in Redis (same as push workers)
+        result_key = f"laddr:result:{job_id}"
+        await redis_client.set(
+            result_key,
+            json.dumps(request.result),
+            ex=1800,  # 30 min TTL
+        )
+        # Release lock
+        await redis_client.delete(lock_key)
+
+        # Update DB
+        try:
+            database.save_prompt_result(job_id, request.result, request.status)
+        except Exception:
+            pass
+
+        return {
+            "job_id": job_id,
+            "status": request.status,
+            "message": "Result recorded",
+        }
+
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
