@@ -321,6 +321,19 @@ class WorkerProcess:
                             await self._execute_job(job)
                         except Exception:
                             logger.exception("Job %s failed", job_id)
+                            # Update DB so Mission Control doesn't show stale running jobs
+                            api_url = self.config.get("server", {}).get("api_url")
+                            if api_url:
+                                try:
+                                    import httpx
+                                    async with httpx.AsyncClient(timeout=5) as client:
+                                        await client.post(
+                                            f"{api_url}/api/prompts/{job_id}/complete",
+                                            json={"status": "failed", "outputs": {}},
+                                            headers={"X-API-Key": "internal"},
+                                        )
+                                except Exception:
+                                    pass
                         finally:
                             await self._redis.xack(stream_key, group_name, msg_id)
                             await self._redis.xdel(stream_key, msg_id)
