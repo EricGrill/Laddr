@@ -1,4 +1,4 @@
-node: bitlay
+node: cloud
 worker_id: venice-01
 
 cloud_providers:
