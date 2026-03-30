@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import signal
 import time
 from typing import Any
@@ -99,14 +100,32 @@ def build_agent_config(job: dict, worker_id: str) -> dict:
     }
 
 
+def _expand_env_vars(obj):
+    """Recursively expand ${VAR} patterns in strings from os.environ."""
+    import re
+    if isinstance(obj, str):
+        return re.sub(
+            r'\$\{(\w+)\}',
+            lambda m: os.environ.get(m.group(1), m.group(0)),
+            obj,
+        )
+    if isinstance(obj, dict):
+        return {k: _expand_env_vars(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_expand_env_vars(item) for item in obj]
+    return obj
+
+
 def load_worker_config(config_path: str) -> dict:
     """Load worker config from a YAML file.
 
+    Expands ``${VAR}`` patterns from environment variables.
     Returns the parsed dict.  Raises ``FileNotFoundError`` if the path
     does not exist, or ``yaml.YAMLError`` on malformed YAML.
     """
     with open(config_path, "r") as fh:
-        return yaml.safe_load(fh) or {}
+        raw = yaml.safe_load(fh) or {}
+    return _expand_env_vars(raw)
 
 
 async def _execute_script_job(job: dict) -> dict:
@@ -202,6 +221,8 @@ class WorkerProcess:
         self._active_jobs: int = 0
         self._heartbeat_task: asyncio.Task | None = None
         self._seen_ids: set[str] = set()
+        self._semaphore: asyncio.Semaphore | None = None
+        self._tasks: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -270,10 +291,22 @@ class WorkerProcess:
             self._heartbeat_loop(capabilities)
         )
 
+        # Concurrency control — run up to max_concurrent jobs in parallel
+        self._semaphore = asyncio.Semaphore(self.max_concurrent)
+
         # Consume loop
-        logger.info("Worker %s started, consuming from %s", self.worker_id, stream_key)
+        logger.info(
+            "Worker %s started (max_concurrent=%d), consuming from %s",
+            self.worker_id, self.max_concurrent, stream_key,
+        )
         try:
             while self._running:
+                # Wait for a free slot before reading the next job
+                await self._semaphore.acquire()
+                if not self._running:
+                    self._semaphore.release()
+                    break
+
                 try:
                     results = await self._redis.xreadgroup(
                         groupname=group_name,
@@ -283,9 +316,9 @@ class WorkerProcess:
                         block=2000,
                     )
                 except Exception as exc:
+                    self._semaphore.release()
                     err_msg = str(exc)
                     if "NOGROUP" in err_msg:
-                        # Stream or group was deleted (e.g. by flush) — recreate
                         logger.warning("Stream/group deleted, recreating %s", stream_key)
                         try:
                             await self._redis.xgroup_create(
@@ -299,12 +332,11 @@ class WorkerProcess:
                     continue
 
                 if not results:
+                    self._semaphore.release()
                     continue
 
                 for _stream, messages in results:
                     for msg_id, fields in messages:
-                        # Dispatcher sends {"job": json.dumps(...)},
-                        # API sends {"payload": json.dumps(...), "job_id": ...}
                         raw = fields.get("payload") or fields.get("job", "{}")
                         job = json.loads(raw)
 
@@ -314,35 +346,55 @@ class WorkerProcess:
                         if job_id in self._seen_ids:
                             await self._redis.xack(stream_key, group_name, msg_id)
                             await self._redis.xdel(stream_key, msg_id)
+                            self._semaphore.release()
                             continue
                         self._seen_ids.add(job_id)
 
-                        try:
-                            await self._execute_job(job)
-                        except Exception:
-                            logger.exception("Job %s failed", job_id)
-                            # Update DB so Mission Control doesn't show stale running jobs
-                            api_url = self.config.get("server", {}).get("api_url")
-                            if api_url:
-                                try:
-                                    import httpx
-                                    async with httpx.AsyncClient(timeout=5) as client:
-                                        await client.post(
-                                            f"{api_url}/api/prompts/{job_id}/complete",
-                                            json={"status": "failed", "outputs": {}},
-                                            headers={"X-API-Key": "internal"},
-                                        )
-                                except Exception:
-                                    pass
-                        finally:
-                            await self._redis.xack(stream_key, group_name, msg_id)
-                            await self._redis.xdel(stream_key, msg_id)
+                        # Fire-and-forget: run job in background task
+                        task = asyncio.create_task(
+                            self._run_job_task(job, job_id, msg_id, stream_key, group_name)
+                        )
+                        self._tasks.add(task)
+                        task.add_done_callback(self._tasks.discard)
         finally:
+            # Wait for in-flight jobs to finish
+            if self._tasks:
+                logger.info("Waiting for %d in-flight jobs to finish...", len(self._tasks))
+                await asyncio.gather(*self._tasks, return_exceptions=True)
             if self._heartbeat_task:
                 self._heartbeat_task.cancel()
             await self._deregister()
             await self._redis.aclose()
             logger.info("Worker %s stopped", self.worker_id)
+
+    # ------------------------------------------------------------------
+    # Concurrent job wrapper
+    # ------------------------------------------------------------------
+
+    async def _run_job_task(
+        self, job: dict, job_id: str, msg_id, stream_key: str, group_name: str,
+    ) -> None:
+        """Execute a single job as a background task, releasing the semaphore when done."""
+        try:
+            await self._execute_job(job)
+        except Exception:
+            logger.exception("Job %s failed", job_id)
+            api_url = self.config.get("server", {}).get("api_url")
+            if api_url:
+                try:
+                    import httpx
+                    async with httpx.AsyncClient(timeout=5) as client:
+                        await client.post(
+                            f"{api_url}/api/prompts/{job_id}/complete",
+                            json={"status": "failed", "outputs": {}},
+                            headers={"X-API-Key": "internal"},
+                        )
+                except Exception:
+                    pass
+        finally:
+            await self._redis.xack(stream_key, group_name, msg_id)
+            await self._redis.xdel(stream_key, msg_id)
+            self._semaphore.release()
 
     # ------------------------------------------------------------------
     # Job execution
