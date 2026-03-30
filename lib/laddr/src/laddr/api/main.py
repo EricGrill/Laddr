@@ -2612,6 +2612,8 @@ async def submit_capability_job(request: SubmitCapabilityJobRequest):
         job_payload["callback_headers"] = json.dumps(request.callback_headers)
 
     if service_registry:
+        if request.services is not None:
+            job_payload["services"] = request.services
         playbook = service_registry.build_playbook(job_payload)
         if playbook:
             original = job_payload.get("system_prompt", "")

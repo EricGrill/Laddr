@@ -166,7 +166,8 @@ class ServiceRegistry:
 
         services: list[ServiceDefinition] = []
 
-        if "services" in job and job["services"]:
+        if "services" in job:
+            # Explicit services list — empty means "no services wanted"
             requested = set(job["services"])
             services = [
                 s for s in self._services.values()
