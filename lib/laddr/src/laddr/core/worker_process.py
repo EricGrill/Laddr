@@ -377,24 +377,43 @@ class WorkerProcess:
         """Execute a single job as a background task, releasing the semaphore when done."""
         try:
             await self._execute_job(job)
-        except Exception:
-            logger.exception("Job %s failed", job_id)
-            api_url = self.config.get("server", {}).get("api_url")
-            if api_url:
+        except Exception as exc:
+            err_msg = str(exc)
+            # Context size exceeded on local model → retry with cloud provider
+            if "Context size" in err_msg and self.cloud_providers:
+                logger.warning("Job %s context too large for local model, retrying with cloud", job_id)
                 try:
-                    import httpx
-                    async with httpx.AsyncClient(timeout=5) as client:
-                        await client.post(
-                            f"{api_url}/api/prompts/{job_id}/complete",
-                            json={"status": "failed", "outputs": {}},
-                            headers={"X-API-Key": "internal"},
-                        )
+                    job["_force_cloud"] = True
+                    await self._execute_job(job)
                 except Exception:
-                    pass
+                    logger.exception("Job %s failed on cloud retry too", job_id)
+                    self._mark_failed(job_id)
+            else:
+                logger.exception("Job %s failed", job_id)
+                self._mark_failed(job_id)
         finally:
             await self._redis.xack(stream_key, group_name, msg_id)
             await self._redis.xdel(stream_key, msg_id)
             self._semaphore.release()
+
+    def _mark_failed(self, job_id: str) -> None:
+        """Mark a job as failed via API (fire-and-forget)."""
+        api_url = self.config.get("server", {}).get("api_url")
+        if api_url:
+            import asyncio
+            asyncio.ensure_future(self._async_mark_failed(api_url, job_id))
+
+    async def _async_mark_failed(self, api_url: str, job_id: str) -> None:
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=5) as client:
+                await client.post(
+                    f"{api_url}/api/prompts/{job_id}/complete",
+                    json={"status": "failed", "outputs": {}},
+                    headers={"X-API-Key": "internal"},
+                )
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Job execution
@@ -578,12 +597,13 @@ class WorkerProcess:
         # Pre-flight: try local LM Studio first, cloud providers as fallback
         model = None
         cloud_provider = None
+        force_cloud = job.pop("_force_cloud", False)
 
-        # Local models first (fastest, no cost)
-        if self._models:
+        # Local models first (fastest, no cost) — skip if forced to cloud
+        if self._models and not force_cloud:
             model = select_model_for_job(self._models, requirements)
 
-        # Fall back to cloud providers if no local match
+        # Fall back to cloud providers if no local match or forced
         if model is None and self.cloud_providers:
             for provider in self.cloud_providers:
                 provider_models = provider.get("models", [])
