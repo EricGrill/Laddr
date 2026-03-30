@@ -248,6 +248,17 @@ class Dispatcher:
 
     async def _dispatch_job(self, job: dict, stream: str, msg_id: str) -> bool:
         """Try to route a single job. Returns True if dispatched."""
+        # Jobs with agent_type are reserved for pull-based agents (Codex, etc.)
+        # Don't dispatch them to push workers — leave in stream for agent claim.
+        reqs = job.get("requirements", {})
+        if isinstance(reqs, str):
+            try:
+                reqs = json.loads(reqs)
+            except Exception:
+                reqs = {}
+        if reqs.get("agent_type"):
+            return False
+
         worker = await self._triage_and_route(job)
         if worker is None:
             return False
