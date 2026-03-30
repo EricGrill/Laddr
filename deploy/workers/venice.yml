@@ -1,4 +1,4 @@
-node: cloud
+node: kamino
 worker_id: venice-01
 
 cloud_providers:
