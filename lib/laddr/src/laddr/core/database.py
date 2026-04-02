@@ -357,9 +357,31 @@ class DatabaseService:
                     "prompt_name": prompt.prompt_name,
                     "status": prompt.status,
                     "created_at": _iso_z(prompt.created_at),
+                    "completed_at": _iso_z(prompt.completed_at),
                 }
                 for prompt in prompts
             ]
+
+    def reap_zombie_jobs(self, max_age_minutes: int = 60) -> int:
+        """Mark stuck pending/running prompt executions as failed.
+
+        Returns the number of reaped rows.
+        """
+        cutoff = datetime.utcnow() - timedelta(minutes=max_age_minutes)
+        with self.get_session() as session:
+            zombies = (
+                session.query(PromptExecution)
+                .filter(
+                    PromptExecution.status.in_(["pending", "running"]),
+                    PromptExecution.created_at < cutoff,
+                )
+                .all()
+            )
+            for z in zombies:
+                z.status = "failed"
+                z.completed_at = datetime.utcnow()
+                z.outputs = {"error": "Reaped: stuck in %s for >%d min" % (z.status, max_age_minutes)}
+            return len(zombies)
 
     def count_executions_by_bucket(self, since_minutes: int) -> dict[str, int]:
         """Count PromptExecution rows by status within the last N minutes.

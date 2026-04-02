@@ -442,12 +442,27 @@ if __name__ == "__main__":
         template_reg = TemplateRegistry()
         dispatcher = Dispatcher(worker_reg, template_reg, redis_client=redis_client)
 
+        async def _reap_zombies():
+            """Periodically mark stuck jobs as failed."""
+            from laddr.core.config import LaddrConfig, BackendFactory
+            db = BackendFactory(LaddrConfig()).create_database_backend()
+            while True:
+                await asyncio.sleep(300)  # every 5 minutes
+                try:
+                    reaped = db.reap_zombie_jobs(max_age_minutes=60)
+                    if reaped:
+                        logger.info("Reaped %d zombie jobs stuck >60 min", reaped)
+                except Exception as exc:
+                    logger.warning("Zombie reaper error: %s", exc)
+
         logger.info("Starting dispatcher...")
+        reaper_task = asyncio.create_task(_reap_zombies())
         try:
             await dispatcher.run()
         except KeyboardInterrupt:
             dispatcher.stop()
         finally:
+            reaper_task.cancel()
             await redis_client.aclose()
 
     logging.basicConfig(level=logging.INFO)
