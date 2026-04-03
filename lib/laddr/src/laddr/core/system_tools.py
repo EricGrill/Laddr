@@ -41,6 +41,8 @@ __all__ = [
     "create_system_tools",
     # Script execution tool
     "system_exec_script",
+    # Image generation tool
+    "system_generate_image",
 ]
 
 # Global registry for tool overrides
@@ -791,6 +793,61 @@ class ParallelDelegationTool:
         }
 
 
+async def system_generate_image(
+    prompt: str,
+    size: str = "1024x1024",
+    steps: int | None = None,
+    seed: int | None = None,
+    **kwargs,
+) -> dict:
+    """Generate an image from a text prompt using the local Flux server.
+
+    Args:
+        prompt: Detailed text description of the image to generate.
+                Be specific: include style, mood, composition, lighting.
+        size: Image dimensions as WxH (e.g. "1024x1024", "1024x768", "512x512").
+              Smaller sizes are faster.
+        steps: Number of inference steps. Higher = better quality but slower.
+               Default depends on model (12 for Flux 2 Klein).
+        seed: Random seed for reproducibility. Omit for random.
+
+    Returns:
+        dict with url (path to saved image) and metadata.
+    """
+    import os as _os
+
+    endpoint = _os.environ.get("FLUX_ENDPOINT", "http://localhost:8200")
+
+    payload = {
+        "prompt": prompt,
+        "size": size,
+        "response_format": "url",
+    }
+    if steps is not None:
+        payload["steps"] = steps
+    if seed is not None:
+        payload["seed"] = seed
+
+    import httpx
+
+    async with httpx.AsyncClient(timeout=600) as client:
+        resp = await client.post(f"{endpoint}/v1/images/generations", json=payload)
+        if resp.status_code != 200:
+            return {"error": f"Flux server returned {resp.status_code}: {resp.text[:500]}"}
+        data = resp.json()
+
+    images = data.get("data", [])
+    if not images:
+        return {"error": "No images generated"}
+
+    return {
+        "status": "success",
+        "images": [{"url": f"{endpoint}{img['url']}"} for img in images],
+        "prompt": prompt,
+        "size": size,
+    }
+
+
 async def system_exec_script(
     command: str,
     timeout_seconds: int = 300,
@@ -932,6 +989,14 @@ def create_system_tools(message_bus, storage_backend=None, agent=None) -> dict[s
             tools["system_list_artifacts"] = (wrap_with_runtime_injection(override), [])
         else:
             tools["system_list_artifacts"] = (artifact_tool.list_artifacts, [])
+
+    # Image generation tool (for workers with image-gen skill)
+    override = get_tool_override("system_generate_image")
+    if override:
+        logger.info("✅ Using custom override for system_generate_image")
+        tools["system_generate_image"] = (wrap_with_runtime_injection(override), ["generate_image"])
+    else:
+        tools["system_generate_image"] = (system_generate_image, ["generate_image"])
 
     # NEW FEATURE: Register any additional custom system tools that weren't overrides
     # This allows users to create entirely new system tools, not just override existing ones

@@ -5,6 +5,7 @@ worker_id: snoke-01
 llm:
   provider: lmstudio
   endpoint: http://localhost:1234/v1
+  model: google/gemma-4-26b-a4b
 
 mcps:
   - holocron
@@ -15,6 +16,7 @@ skills:
   - web-research
   - code-gen
   - script-exec
+  - image-gen
 
 max_concurrent: 2
 

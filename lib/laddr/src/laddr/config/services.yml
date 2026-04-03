@@ -3,9 +3,9 @@ services:
     name: Image Generation
     category: creative
     icon: "🎨"
-    description: Generate images from text prompts using Gemini.
-    mcp: nano-banana
+    description: Generate images from text prompts using local Flux 2 or Gemini.
     tools:
+      - system_generate_image
       - generate_image
       - generate_blog_images
     playbook: |
