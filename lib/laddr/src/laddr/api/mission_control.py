@@ -154,21 +154,36 @@ def _dominant_mode(work_mix: dict[str, int]) -> str:
 
 def _build_worker(worker: dict) -> dict:
     """Convert a worker registry entry to a Mission Control worker."""
+    # Map skills to known station IDs — frontend uses capabilities[0] as station grouping key
+    _SKILL_TO_STATION = {
+        "code-gen": "code",
+        "script-exec": "code",
+        "web-research": "tool",
+        "image-gen": "llm",
+    }
     caps = []
-    for key in ("models", "mcps", "skills"):
-        val = worker.get(key)
-        if isinstance(val, list):
-            for item in val:
-                if isinstance(item, dict):
-                    caps.append(item.get("id", str(item)))
-                else:
-                    caps.append(str(item))
-        elif isinstance(val, str):
-            try:
-                caps.extend(json.loads(val))
-            except (json.JSONDecodeError, TypeError):
-                if val:
-                    caps.append(val)
+    skills = worker.get("skills", [])
+    if isinstance(skills, str):
+        try:
+            skills = json.loads(skills)
+        except (json.JSONDecodeError, TypeError):
+            skills = [skills] if skills else []
+    for s in skills:
+        station = _SKILL_TO_STATION.get(s, s)
+        if station not in caps:
+            caps.append(station)
+    # Append MCPs as secondary capabilities
+    mcps = worker.get("mcps", [])
+    if isinstance(mcps, str):
+        try:
+            mcps = json.loads(mcps)
+        except (json.JSONDecodeError, TypeError):
+            mcps = [mcps] if mcps else []
+    for m in mcps:
+        if m not in caps:
+            caps.append(str(m))
+    if not caps:
+        caps = ["dispatcher"]
 
     active = worker.get("active_jobs", 0)
     if isinstance(active, str):
