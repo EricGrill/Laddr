@@ -980,18 +980,20 @@ async def get_prompt(prompt_id: str, _: None = require_api_key):
 
 
 @app.get("/api/prompts")
-async def list_prompts(limit: int = 50, _: None = require_api_key):
+async def list_prompts(limit: int = 50, offset: int = 0, since_hours: int = 24, _: None = require_api_key):
     """
     List recent prompt executions.
 
     Args:
         limit: Maximum number of prompts to return
+        offset: Number of prompts to skip (for pagination)
+        since_hours: Only return prompts created in the last N hours (default 24)
 
     Returns:
-        List of prompt executions
+        List of prompt executions with total count
     """
     try:
-        prompts = database.list_prompts(limit=limit)
+        prompts, total = database.list_prompts(limit=limit, offset=offset, since_hours=since_hours)
 
         return {
             "prompts": [
@@ -1004,7 +1006,9 @@ async def list_prompts(limit: int = 50, _: None = require_api_key):
                 }
                 for prompt in prompts
             ],
-            "limit": limit
+            "limit": limit,
+            "offset": offset,
+            "total": total,
         }
 
     except Exception as e:

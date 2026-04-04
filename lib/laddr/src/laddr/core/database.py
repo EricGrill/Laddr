@@ -346,12 +346,29 @@ class DatabaseService:
                 "completed_at": _iso_z(prompt.completed_at),
             }
 
-    def list_prompts(self, limit: int = 50) -> list[dict]:
-        """List recent prompt executions."""
-        with self.get_session() as session:
-            prompts = session.query(PromptExecution).order_by(PromptExecution.created_at.desc()).limit(limit).all()
+    def list_prompts(self, limit: int = 50, offset: int = 0, since_hours: int | None = None) -> tuple[list[dict], int]:
+        """List recent prompt executions.
 
-            return [
+        Returns a tuple of (rows, total_count) where total_count reflects the
+        filter before limit/offset is applied.
+        """
+        with self.get_session() as session:
+            query = session.query(PromptExecution)
+
+            if since_hours is not None:
+                cutoff = datetime.utcnow() - timedelta(hours=since_hours)
+                query = query.filter(PromptExecution.created_at >= cutoff)
+
+            total = query.count()
+
+            prompts = (
+                query.order_by(PromptExecution.created_at.desc())
+                .offset(offset)
+                .limit(limit)
+                .all()
+            )
+
+            rows = [
                 {
                     "prompt_id": prompt.prompt_id,
                     "prompt_name": prompt.prompt_name,
@@ -361,6 +378,8 @@ class DatabaseService:
                 }
                 for prompt in prompts
             ]
+
+            return rows, total
 
     def reap_zombie_jobs(self, max_age_minutes: int = 60) -> int:
         """Mark stuck pending/running prompt executions as failed.
