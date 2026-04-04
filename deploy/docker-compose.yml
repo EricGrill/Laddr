@@ -76,7 +76,7 @@ services:
   dashboard:
     image: agnetlabs/laddrdashboard:latest
     ports:
-      - "5173:80"
+      - "5173:5173"
     environment:
       VITE_API_URL: http://api:8000
 
