@@ -31,15 +31,18 @@ export const STATION_POSITIONS: Record<
   { x: number; y: number; type: StationType; label: string }
 > = {
   // Positions as fractions (0-1) of viewport — multiply by screen width/height
-  intake: { x: 0.12, y: 0.18, type: 'intake', label: 'Incoming Orders' },
-  dispatcher: { x: 0.40, y: 0.45, type: 'dispatcher', label: 'Dispatch Hub' },
-  llm: { x: 0.22, y: 0.68, type: 'llm', label: 'Science/Research' },
-  code: { x: 0.60, y: 0.68, type: 'code', label: 'Systems Engineering' },
-  tool: { x: 0.12, y: 0.85, type: 'tool', label: 'Recon/Comms' },
-  output: { x: 0.72, y: 0.45, type: 'output', label: 'Output Dock' },
-  supervisor: { x: 0.60, y: 0.15, type: 'supervisor', label: 'Review/Verification' },
-  'command-oversight': { x: 0.85, y: 0.15, type: 'supervisor', label: 'Command Deck' },
-  error: { x: 0.60, y: 0.88, type: 'error', label: 'Error Chamber' },
+  // Top row: intake + supervisor
+  intake: { x: 0.10, y: 0.08, type: 'intake', label: 'Incoming Orders' },
+  supervisor: { x: 0.55, y: 0.05, type: 'supervisor', label: 'Review/Verification' },
+  'command-oversight': { x: 0.80, y: 0.05, type: 'supervisor', label: 'Command Deck' },
+  // Middle row: dispatcher + output
+  dispatcher: { x: 0.38, y: 0.30, type: 'dispatcher', label: 'Dispatch Hub' },
+  output: { x: 0.75, y: 0.30, type: 'output', label: 'Output Dock' },
+  // Bottom row: worker stations (where workers cluster)
+  tool: { x: 0.15, y: 0.55, type: 'tool', label: 'Recon/Comms' },
+  llm: { x: 0.40, y: 0.55, type: 'llm', label: 'Science/Research' },
+  code: { x: 0.65, y: 0.55, type: 'code', label: 'Systems Engineering' },
+  error: { x: 0.85, y: 0.55, type: 'error', label: 'Error Chamber' },
 };
 
 export interface StationConfig {
