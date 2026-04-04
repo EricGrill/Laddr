@@ -33,7 +33,7 @@ function workerPosition(
   index: number,
   total: number,
 ): { x: number; y: number } {
-  const spacing = 40;
+  const spacing = 80;
   const cols = Math.ceil(Math.sqrt(total));
   const col = index % cols;
   const row = Math.floor(index / cols);
@@ -413,7 +413,7 @@ export function PixiCanvas() {
         }
 
         // Update summary overlay
-        const onlineWorkers = workers.filter((w) => w.status === 'online').length;
+        const onlineWorkers = workers.filter((w) => w.status !== 'offline').length;
         const totalActiveJobs = allJobs.filter((j) => !HIDDEN.has(j.state)).length;
         const totalQueueDepth = allJobs.filter((j) => j.state === 'queued' || j.state === 'created').length;
         activeJobsText.text = `ACTIVE JOBS: ${totalActiveJobs}`;
