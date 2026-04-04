@@ -33,7 +33,7 @@ function workerPosition(
   index: number,
   total: number,
 ): { x: number; y: number } {
-  const spacing = 100;
+  const spacing = 120;
   // Spread workers in a horizontal line below the station
   return {
     x: stationX - ((total - 1) * spacing) / 2 + index * spacing,

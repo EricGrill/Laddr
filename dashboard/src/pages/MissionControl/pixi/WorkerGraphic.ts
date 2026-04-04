@@ -155,11 +155,11 @@ export function createWorker(id: string, roleColor: number, capabilities?: strin
   container.addChild(chipGfx);
 
   // Worker name label
-  const shortId = id.length > 10 ? id.slice(0, 10) : id;
+  const shortId = id.length > 8 ? id.slice(0, 8) : id;
   const nameText = new Text({
     text: `${shortId} \u2022 idle`,
     style: new TextStyle({
-      fontSize: 14,
+      fontSize: 11,
       fill: '#cccccc',
       fontFamily: 'Arial, Helvetica, sans-serif',
     }),
@@ -475,7 +475,7 @@ export function updateWorker(
   const isBusy = refs.anim.phase !== 'idle';
 
   // Update name label with phase info
-  const shortId = container.label!.length > 10 ? container.label!.slice(0, 10) : container.label!;
+  const shortId = container.label!.length > 8 ? container.label!.slice(0, 8) : container.label!;
   const phaseLabel = getPhaseLabel(refs.anim.phase);
   refs.nameText.text = `${shortId} \u2022 ${phaseLabel}`;
 
