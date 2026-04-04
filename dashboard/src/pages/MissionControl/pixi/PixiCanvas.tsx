@@ -33,13 +33,11 @@ function workerPosition(
   index: number,
   total: number,
 ): { x: number; y: number } {
-  const spacing = 80;
-  const cols = Math.ceil(Math.sqrt(total));
-  const col = index % cols;
-  const row = Math.floor(index / cols);
+  const spacing = 90;
+  // Spread workers in a horizontal line below the station
   return {
-    x: stationX - ((cols - 1) * spacing) / 2 + col * spacing,
-    y: stationY + 80 + row * spacing,
+    x: stationX - ((total - 1) * spacing) / 2 + index * spacing,
+    y: stationY + 80,
   };
 }
 
@@ -354,28 +352,17 @@ export function PixiCanvas() {
         }
         for (const [cap, group] of Object.entries(stationWorkerGroups)) {
           const layout = resolvePos(cap, app.screen.width, app.screen.height);
-          const stationKey = Object.keys(STATION_POSITIONS).includes(cap) ? cap : `station-${cap}`;
-          const stationJobs = Object.values(state.jobs).filter((j) => {
-            if (j.state === 'completed' || j.state === 'cancelled' || j.state === 'failed') return false;
-            const workType = j.metadata?.workType;
-            return j.currentStationId === stationKey || workType === cap;
-          });
-          const primaryJob = stationJobs[0];
-          const rawActivity = primaryJob?.metadata?.latestActivity;
-          const rawStep = primaryJob?.metadata?.currentStep;
-          const activityStr = typeof rawActivity === 'string' ? rawActivity : null;
-          const stepStr = typeof rawStep === 'string' ? rawStep : null;
-          const bubbleMessage = activityStr
-            ?? stepStr
-            ?? (group.some((w) => w.activeJobs > 0) ? `Working ${String(cap)}` : null);
-          const bubbleKind = String(primaryJob?.metadata?.workType ?? cap);
           for (let i = 0; i < group.length; i++) {
             const w = group[i];
             const wc = workerContainers.get(w.id);
             if (!wc) continue;
             const pos = workerPosition(layout.x, layout.y, i, group.length);
             updateWorker(wc, pos.x, pos.y, w.status, w.activeJobs, elapsed, dt);
-            updateWorkerBubble(wc, w.activeJobs > 0 ? bubbleMessage : null, bubbleKind);
+            // Per-worker bubble: show worker name + job count when busy
+            const workerBubble = w.activeJobs > 0
+              ? `${w.name} [${w.activeJobs}]`
+              : null;
+            updateWorkerBubble(wc, workerBubble, String(cap));
           }
         }
 
