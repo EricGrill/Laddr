@@ -158,7 +158,11 @@ def _build_worker(worker: dict) -> dict:
     for key in ("models", "mcps", "skills"):
         val = worker.get(key)
         if isinstance(val, list):
-            caps.extend(val)
+            for item in val:
+                if isinstance(item, dict):
+                    caps.append(item.get("id", str(item)))
+                else:
+                    caps.append(str(item))
         elif isinstance(val, str):
             try:
                 caps.extend(json.loads(val))

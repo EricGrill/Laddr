@@ -361,10 +361,14 @@ export function PixiCanvas() {
             return j.currentStationId === stationKey || workType === cap;
           });
           const primaryJob = stationJobs[0];
-          const bubbleMessage = primaryJob?.metadata?.latestActivity
-            ?? primaryJob?.metadata?.currentStep
-            ?? (group.some((w) => w.activeJobs > 0) ? `Working ${cap}` : null);
-          const bubbleKind = primaryJob?.metadata?.workType ?? cap;
+          const rawActivity = primaryJob?.metadata?.latestActivity;
+          const rawStep = primaryJob?.metadata?.currentStep;
+          const activityStr = typeof rawActivity === 'string' ? rawActivity : null;
+          const stepStr = typeof rawStep === 'string' ? rawStep : null;
+          const bubbleMessage = activityStr
+            ?? stepStr
+            ?? (group.some((w) => w.activeJobs > 0) ? `Working ${String(cap)}` : null);
+          const bubbleKind = String(primaryJob?.metadata?.workType ?? cap);
           for (let i = 0; i < group.length; i++) {
             const w = group[i];
             const wc = workerContainers.get(w.id);
