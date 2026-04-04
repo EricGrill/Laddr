@@ -20,6 +20,7 @@ class ServiceDefinition:
     mcp: str
     playbook: str
     tools: list[str]
+    skill: str = ""  # optional: mark available if any worker has this skill
     available: bool = False
     tool_schemas: dict[str, Any] = field(default_factory=dict)
 
@@ -49,9 +50,10 @@ class ServiceRegistry:
                 category=svc["category"],
                 icon=svc.get("icon", ""),
                 description=svc.get("description", ""),
-                mcp=svc["mcp"],
+                mcp=svc.get("mcp", ""),
                 playbook=svc.get("playbook", ""),
                 tools=svc.get("tools", []),
+                skill=svc.get("skill", ""),
             )
             self._services[sd.id] = sd
 
@@ -97,6 +99,7 @@ class ServiceRegistry:
             return
 
         alive_mcps: set[str] = set()
+        alive_skills: set[str] = set()
 
         workers_data = await redis.hgetall("laddr:workers:registry")
         now = time.time()
@@ -119,9 +122,13 @@ class ServiceRegistry:
             if now - last_heartbeat <= 90:
                 for mcp_name in worker.get("mcps", []):
                     alive_mcps.add(mcp_name)
+                for skill_name in worker.get("skills", []):
+                    alive_skills.add(skill_name)
 
         for svc in self._services.values():
-            svc.available = svc.mcp in alive_mcps
+            has_mcp = svc.mcp and svc.mcp in alive_mcps
+            has_skill = svc.skill and svc.skill in alive_skills
+            svc.available = has_mcp or has_skill
 
         self.last_discovered = datetime.now(timezone.utc).isoformat()
 

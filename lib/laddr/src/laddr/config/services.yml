@@ -4,6 +4,7 @@ services:
     category: creative
     icon: "🎨"
     description: Generate images from text prompts using local Flux 2 or Gemini.
+    skill: image-gen
     tools:
       - system_generate_image
       - generate_image
