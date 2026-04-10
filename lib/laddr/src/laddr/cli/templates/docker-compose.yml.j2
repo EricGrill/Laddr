@@ -49,6 +49,12 @@ services:
       - .:/app
       # Comment this out in production
       - /var/run/docker.sock:/var/run/docker.sock  # Mount Docker socket for container logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
     depends_on:
       redis:
         condition: service_healthy
@@ -65,7 +71,8 @@ services:
       - VITE_API_URL=http://api:${API_PORT:-8000}
       - VITE_DASH_USERS=${LADDR_DASH_USERS:-admin:admin:admin}
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 {% for agent in agents %}
   # {{ agent.name }} worker
